@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const TelegramBot = require('node-telegram-bot-api');
 const WebSocket = require('ws');
+const path = require('path'); // <-- ДОБАВЬТЕ ЭТУ СТРОКУ
 
 // =======================================================================
 // --- НАСТРОЙКИ: Ваши данные уже вставлены ---
@@ -14,6 +15,11 @@ const CHAT_ID = -4928531128;
 const app = express();
 app.use(express.json());
 app.use(cors());
+// ...
+app.use(express.json());
+app.use(cors());
+app.use(express.static(path.join(__dirname, 'public')));
+//
 
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
 const server = require('http').createServer(app);
