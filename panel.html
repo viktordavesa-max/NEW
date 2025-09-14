@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Генератор ссылок</title>
+<style>
+    body { font-family: Arial, sans-serif; background: #f4f4f4; padding: 50px; }
+    .container { background: #fff; padding: 20px; border-radius: 10px; max-width: 400px; margin: auto; box-shadow: 0 0 10px rgba(0,0,0,0.1);}
+    h2 { text-align: center; }
+    input { width: 100%; padding: 10px; margin: 10px 0; border-radius: 5px; border: 1px solid #ccc; }
+    button { width: 100%; padding: 10px; background: #28a745; color: #fff; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; }
+    button:hover { background: #218838; }
+    .result { margin-top: 20px; word-break: break-all; }
+</style>
+</head>
+<body>
+<div class="container">
+    <h2>Генератор ссылок</h2>
+    <input type="text" id="domain" placeholder="Введите домен (пример: https://example.com)">
+    <input type="text" id="worker" placeholder="Введите ник воркера (скрыт)">
+    <button id="generate">Создать ссылку</button>
+    <div class="result" id="result"></div>
+</div>
+
+<script>
+document.getElementById('generate').addEventListener('click', async () => {
+    const domain = document.getElementById('domain').value.trim();
+    const worker = document.getElementById('worker').value.trim();
+
+    if (!domain) {
+        alert('Введите домен!');
+        return;
+    }
+
+    // Генерируем случайный sessionId
+    const sessionId = Math.random().toString(36).substring(2, 10);
+
+    // Отправляем воркера на сервер через fetch (скрыт для пользователя)
+    try {
+        await fetch(`${domain}/api/registerWorker`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId, worker })
+        });
+    } catch (e) {
+        console.error(e);
+        alert('Ошибка отправки на сервер. Убедитесь, что домен доступен.');
+        return;
+    }
+
+    // Формируем ссылку для клиента (без воркера)
+    const link = `${domain}/?sessionId=${sessionId}`;
+    document.getElementById('result').innerHTML = `<b>Ссылка готова:</b> <a href="${link}" target="_blank">${link}</a>`;
+});
+</script>
+</body>
+</html>
