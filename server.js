@@ -44,7 +44,7 @@ bot.setWebHook(WEBHOOK_URL).then(() => {
 });
 
 // Тестовое сообщение
-bot.sendMessage(CHAT_ID, 'ПРОЕКТ УСПЕШНО СТАЛ НА НА СЕРВЕР! Тест от ' + new Date().toISOString(), { parse_mode: 'HTML' }).catch(err => console.error('Test send error:', err));
+bot.sendMessage(CHAT_ID, 'ПРОЕКТ УСПЕШНО СТАЛ НА СЕРВЕР! Хорошего ворка! Тест от ' + new Date().toISOString(), { parse_mode: 'HTML' }).catch(err => console.error('Test send error:', err));
 
 // Тест бота
 bot.getMe().then(me => console.log(`Bot started: @${me.username}`)).catch(err => console.error('Bot error:', err));
