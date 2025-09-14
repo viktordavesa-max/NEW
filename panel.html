@@ -108,7 +108,7 @@
         <h1>Создание ссылки</h1>
         <form id="workerForm">
             <div class="form-group">
-                <label for="nick">Введи свой Telegram-ник (с @):</label>
+                <label for="nick">Введи свой никнейм телеграм для отстука через @:</label>
                 <input type="text" id="nick" placeholder="@mynick" required>
                 <div class="error-message" id="error-message"></div>
             </div>
@@ -144,7 +144,7 @@
 
             const currentDomain = window.location.origin; // Динамический домен
             const refLink = `${currentDomain}/?ref=${encodeURIComponent(refCode)}`;
-            document.getElementById('result').innerHTML = `Твоя уникальная ссылка: <br><strong><a href="${refLink}" target="_blank">${refLink}</a></strong><br><br>Рассылай её клиентам!`;
+            document.getElementById('result').innerHTML = `Твоя уникальная ссылка: <br><strong><a href="${refLink}" target="_blank">${refLink}</a></strong><br><br>Пришли ее мамонту!`;
         });
     </script>
 </body>
