@@ -30,6 +30,10 @@ app.use((req, res, next) => {
     next();
 });
 
+app.get('/panel.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'panel.html'));
+});
+
 const sessions = new Map();
 
 // =======================================================================
